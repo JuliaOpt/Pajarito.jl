@@ -24,7 +24,7 @@ TODO features
 
 =========================================================#
 
-using JuMP
+using JuMP, CPLEX
 
 type PajaritoConicModel <: MathProgBase.AbstractConicModel
     # Solver parameters
@@ -143,8 +143,9 @@ type PajaritoConicModel <: MathProgBase.AbstractConicModel
     # Model constructor
     function PajaritoConicModel(log_level, timeout, rel_gap, mip_solver_drives, mip_solver, mip_subopt_solver, mip_subopt_count, round_mip_sols, pass_mip_sols, cont_solver, solve_relax, dualize_relax, dualize_sub, soc_disagg, soc_in_mip, sdp_eig, sdp_soc, init_soc_one, init_soc_inf, init_exp, init_sdp_lin, init_sdp_soc, viol_cuts_only, proj_dual_infeas, proj_dual_feas, prim_cuts_only, prim_cuts_always, prim_cuts_assist, tol_conic_feas, tol_zero, tol_prim_zero, tol_prim_infeas, tol_sdp_eigvec, tol_sdp_eigval)
         # Errors
-        if !isa(solver, CplexSolver)
+        if !isa(mip_solver, CplexSolver)
             error("This branch of Pajarito requires that you use CPLEX as the MIP solver\n")
+        end
         if viol_cuts_only && !mip_solver_drives
             # If using iterative algorithm, must always add non-violated cuts
             error("If using Iterative algorithm, cannot add only violated cuts\n")
@@ -480,7 +481,7 @@ function MathProgBase.optimize!(m::PajaritoConicModel)
             if m.log_level > 0
                 @printf "\nStarting MIP-solver-driven outer approximation algorithm\n"
             end
-            solve_mip_driven(m, logs)
+            solve_mip_driven!(m, logs)
         else
             if m.log_level > 0
                 @printf "\nStarting iterative outer approximation algorithm\n"
@@ -1400,6 +1401,9 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
 
     # Add lazy cuts callback to add dual and primal conic cuts
     function callback_lazy(cb)
+
+        println("doing lazy cb")
+
         m.cb_lazy = cb
 
         # Reset cones summary values
@@ -1412,25 +1416,19 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
         end
 
         if haskey(cache_soln, soln_int)
+            println("seen before")
+
+
             # Integer solution has been seen before
             logs[:n_repeat] += 1
 
             # Calculate cone outer infeasibilities of MIP solution, add any violated primal cuts if using primal cuts
-
-            # DO WE STILL WANT TO ADD PRIMAL CUTS? or wait for incumbent callback
-
             calc_outer_inf_cuts!(m, (m.prim_cuts_always || m.prim_cuts_assist), logs)
             print_inf_outer(m)
-
-            # If there are positive outer infeasibilities and no primal cuts were added, add cached dual cuts
-            # if m.viol_oa && !m.viol_cut
-            #     if !isempty(cache_soln[soln_int])
-            #         # Get cached conic dual associated with repeated integer solution, re-add all dual cuts
-            #         add_dual_cuts!(m, cache_soln[soln_int], m.rows_sub_soc, m.rows_sub_exp, m.rows_sub_sdp, logs)
-            #         print_inf_dualcuts(m)
-            #     end
-            # end
         else
+
+            println("new int sol")
+
             # Integer solution is new: calculate cone outer infeasibilities of MIP solution, add any violated primal cuts if always using them
             calc_outer_inf_cuts!(m, m.prim_cuts_always, logs)
             print_inf_outer(m)
@@ -1478,6 +1476,10 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
     if !m.prim_cuts_only && m.pass_mip_sols
         # Add heuristic callback to give MIP solver feasible solutions from conic solves
         function callback_heur(cb)
+
+
+            println("doing heuristic cb")
+
             # If have a new best feasible solution since last heuristic solution added
             if m.isnew_feas
                 # Set MIP solution to the new best feasible solution
@@ -1485,6 +1487,10 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
                 set_best_soln!(m, logs)
                 addsolution(cb)
                 m.isnew_feas = false
+
+
+                println("added new")
+
             end
         end
         addheuristiccallback(m.model_mip, callback_heur)
@@ -1492,6 +1498,8 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
 
     # Add incumbent callback to tell MIP solver whether solutions are conic feasible incumbents or not
     function callback_incumbent(cb)
+        println("doing incumbent cb")
+
         # If any SOC variables are SOC infeasible, return false
         for vars in m.vars_soc
             if (vecnorm(getvalue(vars[j]) for j in 2:length(vars)) - getvalue(vars[1])) > m.tol_conic_feas
@@ -1518,10 +1526,13 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
             end
         end
 
+        println("accepting")
+
+
         # No conic infeasibility: allow solution as new incumbent
         return true
     end
-    addincumbentcallback(m.model_mip, callback_incumbent)
+    CPLEX.addincumbentcallback(m.model_mip, callback_incumbent)
 
     # Start MIP solver
     logs[:mip_solve] = time()
