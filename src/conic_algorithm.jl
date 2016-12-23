@@ -1396,7 +1396,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
     end
 
     cache_soln = Set{Vector{Float64}}()
-    soln_int = Vector{Float64}(length(m.x_int))
+    # soln_int = Vector{Float64}(length(m.x_int))
 
     # Add lazy cuts callback to add dual and primal conic cuts
     function callback_lazy(cb)
@@ -1404,8 +1404,8 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
         m.cb_lazy = cb
         reset_cone_summary!(m)
 
-        # # Get integer solution, round if option
-        # soln_int = getvalue(m.x_int)
+        # Get integer solution, round if option
+        soln_int = getvalue(m.x_int)
         # if m.round_mip_sols
         #     soln_int = map!(round, soln_int)
         # end

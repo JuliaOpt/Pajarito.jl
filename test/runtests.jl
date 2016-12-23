@@ -31,6 +31,6 @@ mip = CPLEX.CplexSolver(
     CPX_PARAM_MIPCBREDLP=0
     )
 runconictests(true, mip, ECOS.ECOSSolver(verbose=false), log)
-runsdptests(true, mip, Mosek.MosekSolver(LOG=0), log)
+# runsdptests(true, mip, Mosek.MosekSolver(LOG=0), log)
 
 FactCheck.exitstatus()
