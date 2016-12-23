@@ -17,11 +17,20 @@ include("sdptest.jl")
 TOL = 1e-3
 
 # Option to print with log_level
-log = 0
+log = 1
 
 # Run tests
-mip = CPLEX.CplexSolver()
+mip = CPLEX.CplexSolver(
+    CPX_PARAM_MIPDISPLAY=3,
+    CPX_PARAM_EPGAP=1e-5,
+    CPX_PARAM_EPRHS=1e-8,
+    CPX_PARAM_EPINT=1e-8,
+    CPX_PARAM_THREADS=1,
+    CPX_PARAM_TILIM=60.0,
+    CPX_PARAM_REDUCE=1,
+    CPX_PARAM_MIPCBREDLP=0
+    )
 runconictests(true, mip, ECOS.ECOSSolver(verbose=false), log)
-# runsdptests(true, mip, Mosek.MosekSolver(LOG=0), log)
+runsdptests(true, mip, Mosek.MosekSolver(LOG=0), log)
 
 FactCheck.exitstatus()
