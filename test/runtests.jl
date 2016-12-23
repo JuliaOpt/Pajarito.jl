@@ -17,7 +17,7 @@ include("sdptest.jl")
 TOL = 1e-3
 
 # Option to print with log_level
-log = 1
+log = 3
 
 # Run tests
 mip = CPLEX.CplexSolver(

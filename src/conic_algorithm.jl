@@ -1402,7 +1402,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
     function callback_lazy(cb)
         println("doing lazy cb")
         m.cb_lazy = cb
-        # reset_cone_summary!(m)
+        reset_cone_summary!(m)
 
         # # Get integer solution, round if option
         # soln_int = getvalue(m.x_int)
@@ -1418,7 +1418,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
             # Calculate cone outer infeasibilities of MIP solution, add any violated primal cuts
             calc_outer_inf_cuts!(m, true, logs)
             println("OA violation exists: $(m.viol_oa), violating cuts added: $(m.viol_cut)")
-            # print_inf_outer(m)
+            print_inf_outer(m)
             if m.viol_oa && !m.viol_cut
                 warn("OA violation exists but no primal cuts were able to be added\n")
             end
@@ -1435,12 +1435,12 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
                 # Success: add dual cuts to MIP
                 println("Conic status: $status_conic")
                 add_dual_cuts!(m, dual_conic, m.rows_sub_soc, m.rows_sub_exp, m.rows_sub_sdp, logs)
-                # print_inf_dualcuts(m)
+                print_inf_dualcuts(m)
             else
                 # Failure: add primal cuts to MIP
                 println("Conic failure: attempting primal cuts")
                 calc_outer_inf_cuts!(m, true, logs)
-                # print_inf_outer(m)
+                print_inf_outer(m)
                 if m.viol_oa && !m.viol_cut
                     warn("OA violation exists but no primal cuts were able to be added\n")
                 end
@@ -1449,24 +1449,27 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
     end
     addlazycallback(m.model_mip, callback_lazy)
 
-    # # Add heuristic callback to give MIP solver feasible solutions from conic solves
-    # function callback_heur(cb)
-    #     # If have a new best feasible solution since last heuristic solution added
-    #     println("doing heuristic cb")
-    #     if m.isnew_feas
-    #         # Set MIP solution to the new best feasible solution
-    #         println("adding new sol")
-    #         m.cb_heur = cb
-    #         set_best_soln!(m, logs)
-    #         addsolution(cb)
-    #         m.isnew_feas = false
-    #     end
-    # end
-    # addheuristiccallback(m.model_mip, callback_heur)
+    # Add heuristic callback to give MIP solver feasible solutions from conic solves
+    function callback_heur(cb)
+        # If have a new best feasible solution since last heuristic solution added
+        println("doing heuristic cb")
+        if m.isnew_feas
+            # Set MIP solution to the new best feasible solution
+            println("adding new sol")
+            m.cb_heur = cb
+            set_best_soln!(m, logs)
+            addsolution(cb)
+            m.isnew_feas = false
+        end
+    end
+    addheuristiccallback(m.model_mip, callback_heur)
 
     # Add incumbent callback to tell MIP solver whether solutions are conic feasible incumbents or not
     function callback_incumbent(cb)
         println("doing incumbent cb")
+
+
+        #maybe hash the solutions and accept if they had no OA viol in primal cut check, use cache_soln as dict again, pointing to set of conic solutions
 
         # If any SOC variables are SOC infeasible, return false
         for vars in m.vars_soc
@@ -1589,22 +1592,22 @@ function solve_conicsub!(m::PajaritoConicModel, soln_int::Vector{Float64}, logs:
         dual_conic = Float64[]
     end
 
-    # # Check if have new best feasible solution
-    # if (status_conic == :Optimal) || (status_conic == :Suboptimal)
-    #     soln_cont = MathProgBase.getsolution(m.model_conic)
-    #     logs[:n_feas] += 1
-    #
-    #     # Check if new full objective beats best incumbent
-    #     new_obj = dot(m.c_sub_int, soln_int) + dot(m.c_sub_cont, soln_cont)
-    #     if new_obj < m.best_obj
-    #         # Save new incumbent info and indicate new solution for heuristic callback
-    #         m.best_obj = new_obj
-    #         m.best_int = soln_int
-    #         m.best_cont = soln_cont
-    #         m.best_slck = m.b_sub_int - m.A_sub_cont * m.best_cont
-    #         m.isnew_feas = true
-    #     end
-    # end
+    # Check if have new best feasible solution
+    if (status_conic == :Optimal) || (status_conic == :Suboptimal)
+        soln_cont = MathProgBase.getsolution(m.model_conic)
+        logs[:n_feas] += 1
+
+        # Check if new full objective beats best incumbent
+        new_obj = dot(m.c_sub_int, soln_int) + dot(m.c_sub_cont, soln_cont)
+        if new_obj < m.best_obj
+            # Save new incumbent info and indicate new solution for heuristic callback
+            m.best_obj = new_obj
+            m.best_int = soln_int
+            m.best_cont = soln_cont
+            m.best_slck = m.b_sub_int - m.A_sub_cont * m.best_cont
+            m.isnew_feas = true
+        end
+    end
 
     # Free the conic model if not saving it
     if !m.update_conicsub && applicable(MathProgBase.freemodel!, m.model_conic)
@@ -1745,7 +1748,7 @@ function add_dual_cuts_soc!(m::PajaritoConicModel, dim::Int, vars::Vector{JuMP.V
     # 2 Project dual if infeasible and proj_dual_infeas or if strictly feasible and proj_dual_feas
     if ((inf_dual > 0.) && m.proj_dual_infeas) || ((inf_dual < 0.) && m.proj_dual_feas)
         # Projection: epigraph variable equals norm
-        dual[1] += vecnorm(dual[j] for j in 2:dim)
+        dual[1] = vecnorm(dual[j] for j in 2:dim)
     end
 
     # Discard cut if epigraph variable is 0
@@ -1755,10 +1758,14 @@ function add_dual_cuts_soc!(m::PajaritoConicModel, dim::Int, vars::Vector{JuMP.V
 
     if m.soc_disagg
         for j in 2:dim
-            # TODO are there cases where we don't want to add this? eg if zero
+            # Discard if dual value j is small
+            if dual[j] == 0.
+                continue
+            end
+
             # 3 Add disaggregated 3-dim cut and update cut infeasibility
             @expression(m.model_mip, cut_expr, (dual[j] / dual[1])^2 * vars[1] + 2. * vars_dagg[j-1] + (2 * dual[j] / dual[1]) * vars[j])
-            if !m.viol_cuts_only || !m.oa_started || (getvalue(cut_expr) < 0.)
+            if !m.viol_cuts_only || !m.oa_started || (-getvalue(cut_expr) > m.tol_zero)
                 if m.mip_solver_drives && m.oa_started
                     @lazyconstraint(m.cb_lazy, cut_expr >= 0.)
                 else
@@ -1770,7 +1777,7 @@ function add_dual_cuts_soc!(m::PajaritoConicModel, dim::Int, vars::Vector{JuMP.V
     else
         # 3 Add nondisaggregated cut and update cut infeasibility
         @expression(m.model_mip, cut_expr, sum(dual[j] * vars[j] for j in 1:dim))
-        if !m.viol_cuts_only || !m.oa_started || (getvalue(cut_expr) < 0.)
+        if !m.viol_cuts_only || !m.oa_started || (-getvalue(cut_expr) > m.tol_zero)
             if m.mip_solver_drives && m.oa_started
                 @lazyconstraint(m.cb_lazy, cut_expr >= 0.)
             else
@@ -1826,7 +1833,7 @@ function add_dual_cuts_exp!(m::PajaritoConicModel, vars::Vector{JuMP.Variable}, 
 
     # 3 Add 3-dim cut
     @expression(m.model_mip, cut_expr, sum(dual[j] * vars[j] for j in 1:3))
-    if !m.viol_cuts_only || !m.oa_started || (getvalue(cut_expr) < 0.)
+    if !m.viol_cuts_only || !m.oa_started || (-getvalue(cut_expr) > m.tol_zero)
         if m.mip_solver_drives && m.oa_started
             @lazyconstraint(m.cb_lazy, cut_expr >= 0.)
         else
@@ -1868,7 +1875,7 @@ function add_dual_cuts_sdp!(m::PajaritoConicModel, dim::Int, vars_smat::Array{Ju
     end
 
     # 3 Add super-rank linear dual cut
-    if !m.viol_cuts_only || !m.oa_started || (getvalue(cut_expr) < 0.)
+    if !m.viol_cuts_only || !m.oa_started || (-getvalue(cut_expr) > m.tol_zero)
         if m.mip_solver_drives && m.oa_started
             @lazyconstraint(m.cb_lazy, cut_expr >= 0.)
         else
@@ -1914,7 +1921,7 @@ function add_dual_cuts_sdp!(m::PajaritoConicModel, dim::Int, vars_smat::Array{Ju
             @expression(m.model_mip, z_expr, sum(smat[k, v] * smat[l, v] * vars_smat[k, l] for k in 1:dim, l in 1:dim if (k != ind_min && l != ind_min)))
             @expression(m.model_mip, cut_expr, vars_smat[ind_min, ind_min] + z_expr - norm(((k == ind_min) ? (vars_smat[ind_min, ind_min] - z_expr) : (2 * smat[k, ind_min] * smat[k, v] * vars_smat[k, ind_min])) for k in 1:dim))
 
-            if !m.viol_cuts_only || !m.oa_started || (getvalue(cut_expr) < 0.)
+            if !m.viol_cuts_only || !m.oa_started || (-getvalue(cut_expr) > m.tol_zero)
                 if m.mip_solver_drives && m.oa_started
                     @lazyconstraint(m.cb_lazy, cut_expr >= 0.)
                 else
@@ -1931,7 +1938,7 @@ function add_dual_cuts_sdp!(m::PajaritoConicModel, dim::Int, vars_smat::Array{Ju
 
             # Add non-sparse rank-1 cut from smat eigenvector v
             @expression(m.model_mip, cut_expr, sum(smat[vi, v] * smat[vj, v] * vars_smat[vi, vj] for vj in 1:dim, vi in 1:dim))
-            if !m.viol_cuts_only || !m.oa_started || (getvalue(cut_expr) < 0.)
+            if !m.viol_cuts_only || !m.oa_started || (-getvalue(cut_expr) > m.tol_zero)
                 if m.mip_solver_drives && m.oa_started
                     @lazyconstraint(m.cb_lazy, cut_expr >= 0.)
                 else
@@ -1947,7 +1954,7 @@ function add_dual_cuts_sdp!(m::PajaritoConicModel, dim::Int, vars_smat::Array{Ju
                 end
             end
             @expression(m.model_mip, cut_expr, sum(smat[vi, v] * smat[vj, v] * vars_smat[vi, vj] for vj in 1:dim, vi in 1:dim))
-            if !m.viol_cuts_only || !m.oa_started || (getvalue(cut_expr) < 0.)
+            if !m.viol_cuts_only || !m.oa_started || (-getvalue(cut_expr) > m.tol_zero)
                 if m.mip_solver_drives && m.oa_started
                     @lazyconstraint(m.cb_lazy, cut_expr >= 0.)
                 else
@@ -2043,14 +2050,14 @@ function add_prim_cuts_soc!(m::PajaritoConicModel, add_viol_cuts::Bool, dim::Int
 
         for j in 2:dim
             # Discard if primal variable is small
-            if abs(prim[j]) <= m.tol_zero
+            if prim[j] == 0.
                 continue
             end
 
             # Add disagg primal cut (divide by original epigraph variable)
             # 2*dj >= 2xj`/y`*xj - (xj'/y`)^2*y
             @expression(m.model_mip, cut_expr, (prim[j] / prim[1])^2 * vars[1] + 2. * vars_dagg[j-1] - (2 * prim[j] / prim[1]) * vars[j])
-            if -getvalue(cut_expr) > m.tol_prim_infeas
+            if -getvalue(cut_expr) > m.tol_zero
                 if m.mip_solver_drives
                     @lazyconstraint(m.cb_lazy, cut_expr >= 0.)
                 else
@@ -2077,7 +2084,7 @@ function add_prim_cuts_soc!(m::PajaritoConicModel, add_viol_cuts::Bool, dim::Int
         # Add full primal cut
         # x`*x / ||x`|| <= y
         @expression(m.model_mip, cut_expr, vars[1] - sum(prim[j] / solnorm * vars[j] for j in 2:dim))
-        if -getvalue(cut_expr) > m.tol_prim_infeas
+        if -getvalue(cut_expr) > m.tol_zero
             if m.mip_solver_drives
                 @lazyconstraint(m.cb_lazy, cut_expr >= 0.)
             else
@@ -2126,7 +2133,7 @@ function add_prim_cuts_exp!(m::PajaritoConicModel, add_viol_cuts::Bool, vars::Ve
     # Add primal cut
     # y`e^(x`/y`) + e^(x`/y`)*(x-x`) + (e^(x`/y`)(y`-x`)/y`)*(y-y`) = e^(x`/y`)*(x + (y`-x`)/y`*y) = e^(x`/y`)*(x+(1-x`/y`)*y) <= z
     @expression(m.model_mip, cut_expr, vars[3] - exp(prim[1] / prim[2]) * (vars[1] + (1. - prim[1] / prim[2]) * vars[2]))
-    if -getvalue(cut_expr) > m.tol_prim_infeas
+    if -getvalue(cut_expr) > m.tol_zero
         if m.mip_solver_drives
             @lazyconstraint(m.cb_lazy, cut_expr >= 0.)
         else
@@ -2176,7 +2183,7 @@ function add_prim_cuts_sdp!(m::PajaritoConicModel, add_viol_cuts::Bool, dim::Int
 
     # # Add super-rank linear primal cut
     # @expression(m.model_mip, cut_expr, sum(-eigvals[v] * prim[vi, v] * prim[vj, v] * vars_smat[vi, vj] for vj in 1:dim, vi in 1:dim, v in 1:dim if eigvals[v] < 0.))
-    # if -getvalue(cut_expr) > m.tol_prim_infeas
+    # if -getvalue(cut_expr) > m.tol_zero
     #     if m.mip_solver_drives
     #         @lazyconstraint(m.cb_lazy, cut_expr >= 0.)
     #     else
@@ -2196,7 +2203,7 @@ function add_prim_cuts_sdp!(m::PajaritoConicModel, add_viol_cuts::Bool, dim::Int
 
         # Add non-sparse rank-1 cut from smat eigenvector v
         @expression(m.model_mip, cut_expr, sum(prim[vi, v] * prim[vj, v] * vars_smat[vi, vj] for vj in 1:dim, vi in 1:dim))
-        if -getvalue(cut_expr) > m.tol_prim_infeas
+        if -getvalue(cut_expr) > m.tol_zero
             if m.mip_solver_drives
                 @lazyconstraint(m.cb_lazy, cut_expr >= 0.)
             else
