@@ -57,9 +57,9 @@ function PajaritoSolver(;
     timeout = Inf,
     rel_gap = 1e-5,
 
-    mip_solver_drives = false,
-    mip_solver = MathProgBase.defaultMIPsolver,
-    mip_subopt_solver = MathProgBase.defaultMIPsolver,
+    mip_solver_drives = true,
+    mip_solver = CPLEX.CplexSolver(),
+    mip_subopt_solver = CPLEX.CplexSolver(),
     mip_subopt_count = 0,
     round_mip_sols = false,
     pass_mip_sols = true,
@@ -85,7 +85,7 @@ function PajaritoSolver(;
     proj_dual_feas = false,
     prim_cuts_only = false,
     prim_cuts_always = false,
-    prim_cuts_assist = false,
+    prim_cuts_assist = true,
 
     tol_conic_feas = 1e-6,
     tol_zero = 1e-10,
@@ -103,31 +103,31 @@ end
 function MathProgBase.ConicModel(s::PajaritoSolver)
     if applicable(MathProgBase.ConicModel, s.cont_solver)
         return PajaritoConicModel(s.log_level, s.timeout, s.rel_gap, s.mip_solver_drives, s.mip_solver, s.mip_subopt_solver, s.mip_subopt_count, s.round_mip_sols, s.pass_mip_sols, s.cont_solver, s.solve_relax, s.dualize_relax, s.dualize_sub, s.soc_disagg, s.soc_in_mip, s.sdp_eig, s.sdp_soc, s.init_soc_one, s.init_soc_inf, s.init_exp, s.init_sdp_lin, s.init_sdp_soc, s.viol_cuts_only, s.proj_dual_infeas, s.proj_dual_feas, s.prim_cuts_only, s.prim_cuts_always, s.prim_cuts_assist, s.tol_conic_feas, s.tol_zero, s.tol_prim_zero, s.tol_prim_infeas, s.tol_sdp_eigvec, s.tol_sdp_eigval)
-    elseif applicable(MathProgBase.NonlinearModel, s.cont_solver)
-        return MathProgBase.ConicModel(ConicNonlinearBridge.ConicNLPWrapper(nlp_solver=s))
+    # elseif applicable(MathProgBase.NonlinearModel, s.cont_solver)
+    #     return MathProgBase.ConicModel(ConicNonlinearBridge.ConicNLPWrapper(nlp_solver=s))
     else
         error("Continuous solver specified is neither a conic solver nor a nonlinear solver recognized by MathProgBase\n")
     end
 end
 
 
-# Create Pajarito nonlinear model: can solve with nonlinear algorithm only
-function MathProgBase.NonlinearModel(s::PajaritoSolver)
-    if !applicable(MathProgBase.NonlinearModel, s.cont_solver)
-        error("Continuous solver specified is not a nonlinear solver recognized by MathProgBase\n")
-    end
-
-    # Translate options into old nonlinearmodel.jl fields
-    verbose = s.log_level
-    algorithm = (s.mip_solver_drives ? "BC" : "OA")
-    mip_solver = s.mip_solver
-    cont_solver = s.cont_solver
-    opt_tolerance = s.rel_gap
-    time_limit = s.timeout
-
-    return PajaritoNonlinearModel(verbose, algorithm, mip_solver, cont_solver, opt_tolerance, time_limit)
-end
-
-
-# Create Pajarito linear-quadratic model: can solve with nonlinear algorithm wrapped with NonlinearToLPQPBridge
-MathProgBase.LinearQuadraticModel(s::PajaritoSolver) = MathProgBase.NonlinearToLPQPBridge(MathProgBase.NonlinearModel(s))
+# # Create Pajarito nonlinear model: can solve with nonlinear algorithm only
+# function MathProgBase.NonlinearModel(s::PajaritoSolver)
+#     if !applicable(MathProgBase.NonlinearModel, s.cont_solver)
+#         error("Continuous solver specified is not a nonlinear solver recognized by MathProgBase\n")
+#     end
+#
+#     # Translate options into old nonlinearmodel.jl fields
+#     verbose = s.log_level
+#     algorithm = (s.mip_solver_drives ? "BC" : "OA")
+#     mip_solver = s.mip_solver
+#     cont_solver = s.cont_solver
+#     opt_tolerance = s.rel_gap
+#     time_limit = s.timeout
+#
+#     return PajaritoNonlinearModel(verbose, algorithm, mip_solver, cont_solver, opt_tolerance, time_limit)
+# end
+#
+#
+# # Create Pajarito linear-quadratic model: can solve with nonlinear algorithm wrapped with NonlinearToLPQPBridge
+# MathProgBase.LinearQuadraticModel(s::PajaritoSolver) = MathProgBase.NonlinearToLPQPBridge(MathProgBase.NonlinearModel(s))
