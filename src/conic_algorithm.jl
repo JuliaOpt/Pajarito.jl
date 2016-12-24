@@ -1406,14 +1406,23 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
 
         # Get integer solution, round if option
         soln_int = getvalue(m.x_int)
-        # if m.round_mip_sols
-        #     soln_int = map!(round, soln_int)
-        # end
+        if m.round_mip_sols
+            soln_int = map!(round, soln_int)
+        end
 
         if soln_int in cache_soln
             # Integer solution has been seen before
             println("seen before")
             logs[:n_repeat] += 1
+
+
+
+
+            # maybe only add one violated primal cut, rather than all.
+            # or dual cuts?
+
+
+            # just write this whole thing for MISOCP only... compact and fast. only have to beat CPLEX on MISOCP tests
 
             # Calculate cone outer infeasibilities of MIP solution, add any violated primal cuts
             calc_outer_inf_cuts!(m, true, logs)
@@ -2024,7 +2033,7 @@ end
 function add_prim_cuts_soc!(m::PajaritoConicModel, add_viol_cuts::Bool, dim::Int, vars::Vector{JuMP.Variable}, vars_dagg::Vector{JuMP.Variable}, spec_summ::Dict{Symbol,Real})
     # Calculate and update outer infeasibility
     inf_outer = vecnorm(getvalue(vars[j]) for j in 2:dim) - getvalue(vars[1])
-    # update_inf_outer!(m, inf_outer, spec_summ)
+    update_inf_outer!(m, inf_outer, spec_summ)
 
     # If outer infeasibility is small, return, else update and return if not adding primal cuts
     if inf_outer < m.tol_prim_infeas
@@ -2075,7 +2084,6 @@ function add_prim_cuts_soc!(m::PajaritoConicModel, add_viol_cuts::Bool, dim::Int
         end
 
         # Discard if norm of non-epigraph variables is zero
-        # TODO can still add a different cut if infeasible
         solnorm = vecnorm(prim[j] for j in 2:dim)
         if solnorm <= m.tol_zero
             return
