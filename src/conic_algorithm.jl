@@ -131,18 +131,14 @@ type PajaritoConicModel <: MathProgBase.AbstractConicModel
         if soc_in_mip
             error("This branch of Pajarito cannot do SOC in MIP\n")
         end
+        if round_mip_sols
+            error("This branch of Pajarito cannot do MIP solution rounding\n")
+        end
         if !prim_cuts_assist
             error("This branch of Pajarito requires that you use primal cuts assist\n")
         end
         if prim_cuts_only || prim_cuts_always
             error("This branch of Pajarito requires that you do not use primal cuts only or always\n")
-        end
-        if soc_in_mip || init_sdp_soc || sdp_soc
-            # If using MISOCP outer approximation, check MIP solver handles MISOCP
-            mip_spec = MathProgBase.supportedcones(mip_solver)
-            if !(:SOC in mip_spec)
-                error("The MIP solver specified does not support MISOCP\n")
-            end
         end
 
         # Warnings
@@ -150,18 +146,7 @@ type PajaritoConicModel <: MathProgBase.AbstractConicModel
             if !solve_relax
                 warn("Not solving the conic continuous relaxation problem; Pajarito may return status :MIPFailure if the outer approximation MIP is unbounded\n")
             end
-            if sdp_soc && mip_solver_drives
-                warn("SOC cuts for SDP cones cannot be added during the MIP-solver-driven algorithm, but initial SOC cuts may be used\n")
-            end
-            if mip_solver_drives
-                warn("For the MIP-solver-driven algorithm, optimality tolerance must be specified as MIP solver option, not Pajarito option\n")
-            end
-            if round_mip_sols
-                warn("Integer solutions will be rounded: if this seems to cause numerical challenges, change round_mip_sols option\n")
-            end
-            if prim_cuts_only
-                warn("Using primal cuts only may cause convergence issues\n")
-            end
+            warn("For the MIP-solver-driven algorithm, optimality tolerance must be specified as MIP solver option, not Pajarito option\n")
             if (prim_cuts_only || prim_cuts_assist) && (tol_prim_zero < 1e-5)
                 warn("When using primal cuts, primal cut zero tolerance should be at least 1e-5 to avoid numerical issues\n")
             end
@@ -444,27 +429,26 @@ function MathProgBase.optimize!(m::PajaritoConicModel)
         end
     end
 
-    if !m.prim_cuts_only
-        tic()
-        if m.log_level > 1
-            @printf "\nCreating conic subproblem model..."
-        end
-        if m.dualize_sub
-            solver_conicsub = ConicDualWrapper(conicsolver=m.cont_solver)
-        else
-            solver_conicsub = m.cont_solver
-        end
-        m.model_conic = MathProgBase.ConicModel(solver_conicsub)
-        if method_exists(MathProgBase.setbvec!, (typeof(m.model_conic), Vector{Float64}))
-            # Can use setbvec! on the conic subproblem model: load it
-            m.update_conicsub = true
-            MathProgBase.loadproblem!(m.model_conic, m.c_sub_cont, m.A_sub_cont, m.b_sub_int, m.cone_con_sub, m.cone_var_sub)
-        end
-        if m.log_level > 1
-            @printf "...Done %8.2fs\n" logs[:conic_proc]
-        end
-        logs[:conic_proc] += toq()
+    tic()
+    if m.log_level > 1
+        @printf "\nCreating conic subproblem model..."
     end
+    if m.dualize_sub
+        solver_conicsub = ConicDualWrapper(conicsolver=m.cont_solver)
+    else
+        solver_conicsub = m.cont_solver
+    end
+    m.model_conic = MathProgBase.ConicModel(solver_conicsub)
+    if method_exists(MathProgBase.setbvec!, (typeof(m.model_conic), Vector{Float64}))
+        # Can use setbvec! on the conic subproblem model: load it
+        m.update_conicsub = true
+        MathProgBase.loadproblem!(m.model_conic, m.c_sub_cont, m.A_sub_cont, m.b_sub_int, m.cone_con_sub, m.cone_var_sub)
+    end
+    if m.log_level > 1
+        @printf "...Done %8.2fs\n" logs[:conic_proc]
+    end
+    logs[:conic_proc] += toq()
+
 
     if (m.status != :Infeasible) && (m.status != :UnboundedRelaxation) && (m.status != :ConicFailure)
         # Initialize and begin iterative or MIP-solver-driven algorithm
@@ -569,16 +553,6 @@ function verify_data(c, A, b, cone_con, cone_var)
             error("A cone $spec has fewer than 2 indices ($(length(inds)))\n")
         elseif spec == :SOCRotated && (length(inds) < 3)
             error("A cone $spec has fewer than 3 indices ($(length(inds)))\n")
-        elseif spec == :SDP
-            if length(inds) < 3
-                error("A cone $spec has fewer than 3 indices ($(length(inds)))\n")
-            else
-                if floor(sqrt(8 * length(inds) + 1)) != sqrt(8 * length(inds) + 1)
-                    error("A cone $spec (in SD svec form) does not have a valid (triangular) number of indices ($(length(inds)))\n")
-                end
-            end
-        elseif spec == :ExpPrimal && (length(inds) != 3)
-            error("A cone $spec does not have exactly 3 indices ($(length(inds)))\n")
         end
     end
 end
@@ -973,42 +947,40 @@ function create_mip_data!(m::PajaritoConicModel, c_new::Vector{Float64}, A_new::
             setname(vars[j], "s$(j)_soc$(n_soc)")
         end
 
-        if m.soc_disagg
-            # Add disaggregated SOC variables
-            # 2*d_j >= y_j^2/x
-            vars_dagg = @variable(model_mip, [j in 1:(len - 1)], lowerbound=0.)
-            vars_dagg_soc[n_soc] = vars_dagg
+        # Add disaggregated SOC variables
+        # 2*d_j >= y_j^2/x
+        vars_dagg = @variable(model_mip, [j in 1:(len - 1)], lowerbound=0.)
+        vars_dagg_soc[n_soc] = vars_dagg
 
-            # Add disaggregated SOC constraint
-            # x >= sum(2*d_j)
-            @constraint(model_mip, vars[1] >= 2. * sum(vars_dagg))
+        # Add disaggregated SOC constraint
+        # x >= sum(2*d_j)
+        @constraint(model_mip, vars[1] >= 2. * sum(vars_dagg))
 
-            # Set names
-            for j in 1:(len - 1)
-                setname(vars_dagg[j], "d$(j+1)_soc$(n_soc)")
+        # Set names
+        for j in 1:(len - 1)
+            setname(vars_dagg[j], "d$(j+1)_soc$(n_soc)")
+        end
+
+        # Add initial SOC linearizations
+        if m.init_soc_one
+            # Add initial L_1 SOC cuts
+            # 2*d_j >= 2*|y_j|/sqrt(len - 1) - x/(len - 1)
+            # for all j, implies x*sqrt(len - 1) >= sum(|y_j|)
+            # linearize y_j^2/x at x = 1, y_j = 1/sqrt(len - 1) for all j
+            for j in 2:len
+              @constraint(model_mip, 2. * vars_dagg[j-1] >=  2. / sqrt(len - 1) * vars[j] - 1. / (len - 1) * vars[1])
+              @constraint(model_mip, 2. * vars_dagg[j-1] >= -2. / sqrt(len - 1) * vars[j] - 1. / (len - 1) * vars[1])
             end
-
-            # Add initial SOC linearizations
-            if m.init_soc_one
-                # Add initial L_1 SOC cuts
-                # 2*d_j >= 2*|y_j|/sqrt(len - 1) - x/(len - 1)
-                # for all j, implies x*sqrt(len - 1) >= sum(|y_j|)
-                # linearize y_j^2/x at x = 1, y_j = 1/sqrt(len - 1) for all j
-                for j in 2:len
-                    @constraint(model_mip, 2. * vars_dagg[j-1] >=  2. / sqrt(len - 1) * vars[j] - 1. / (len - 1) * vars[1])
-                    @constraint(model_mip, 2. * vars_dagg[j-1] >= -2. / sqrt(len - 1) * vars[j] - 1. / (len - 1) * vars[1])
-                end
-            end
-            if m.init_soc_inf
-                # Add initial L_inf SOC cuts
-                # 2*d_j >= 2|y_j| - x
-                # implies x >= |y_j|, for all j
-                # linearize y_j^2/x at x = 1, y_j = 1 for each j (y_k = 0 for k != j)
-                # equivalent to standard 3-dim rotated SOC linearizations x + d_j >= 2|y_j|
-                for j in 2:len
-                    @constraint(model_mip, 2. * vars_dagg[j-1] >=  2. * vars[j] - vars[1])
-                    @constraint(model_mip, 2. * vars_dagg[j-1] >= -2. * vars[j] - vars[1])
-                end
+        end
+        if m.init_soc_inf
+            # Add initial L_inf SOC cuts
+            # 2*d_j >= 2|y_j| - x
+            # implies x >= |y_j|, for all j
+            # linearize y_j^2/x at x = 1, y_j = 1 for each j (y_k = 0 for k != j)
+            # equivalent to standard 3-dim rotated SOC linearizations x + d_j >= 2|y_j|
+            for j in 2:len
+              @constraint(model_mip, 2. * vars_dagg[j-1] >=  2. * vars[j] - vars[1])
+              @constraint(model_mip, 2. * vars_dagg[j-1] >= -2. * vars[j] - vars[1])
             end
         end
     end
@@ -1073,7 +1045,6 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
     # Add lazy cuts callback to add dual and primal conic cuts
     function callback_lazy(cb)
         # println("doing lazy cb")
-
         # Get integer solution
         soln_int = getvalue(m.x_int)
 
@@ -1092,7 +1063,6 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
         else
             # Integer solution is new
             # println("soln new")
-
             # Solve conic subproblem and save dual in dict (empty if conic failure)
             (status_conic, dual_conic) = solve_conicsub!(m, soln_int, logs)
 
@@ -1223,7 +1193,6 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
     # Add incumbent callback to tell MIP solver whether solutions are conic feasible incumbents or not
     function callback_incumbent(cb)
         # println("doing incumbent cb")
-
         if getvalue(m.x_cont) in cache_soln[getvalue(m.x_int)]
             # println("seen in lazy or heuristic: accepting")
             CPLEX.acceptincumbent(cb)
@@ -1500,9 +1469,7 @@ function print_finish(m::PajaritoConicModel, logs::Dict{Symbol,Real})
         return
     end
 
-    if !m.mip_solver_drives
-        @printf " - MIP solve count      = %14d\n" logs[:n_mip]
-    end
+    @printf " - MIP solve count      = %14d\n" logs[:n_mip]
     @printf " - Conic solve count    = %14d\n" logs[:n_conic]
     @printf " - Feas. solution count = %14d\n" logs[:n_feas]
     @printf " - Integer repeat count = %14d\n" logs[:n_repeat]
@@ -1512,12 +1479,7 @@ function print_finish(m::PajaritoConicModel, logs::Dict{Symbol,Real})
     @printf " -- Create conic data   = %14.2e\n" logs[:data_conic]
     @printf " -- Create MIP data     = %14.2e\n" logs[:data_mip]
     @printf " -- Load/solve relax    = %14.2e\n" logs[:relax_solve]
-    if m.mip_solver_drives
-        @printf " - MIP-driven algorithm = %14.2e\n" logs[:oa_alg]
-    else
-        @printf " - Iterative algorithm  = %14.2e\n" logs[:oa_alg]
-        @printf " -- Solve MIPs          = %14.2e\n" logs[:mip_solve]
-    end
+    @printf " - MIP-driven algorithm = %14.2e\n" logs[:oa_alg]
     @printf " -- Solve conic model   = %14.2e\n" logs[:conic_solve]
     @printf " -- Process conic data  = %14.2e\n" logs[:conic_proc]
     @printf " -- Add conic solution  = %14.2e\n" logs[:conic_soln]
