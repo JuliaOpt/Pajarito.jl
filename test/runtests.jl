@@ -14,11 +14,12 @@ include("conictest.jl")
 TOL = 1e-3
 
 # Option to print with log_level
-log = 0
+log = 1
 
 # Run tests
 mip = CPLEX.CplexSolver(
-    CPX_PARAM_MIPDISPLAY=3,
+    CPX_PARAM_SCRIND=0,
+    CPX_PARAM_MIPDISPLAY=0,
     CPX_PARAM_EPGAP=1e-5,
     CPX_PARAM_EPRHS=1e-8,
     CPX_PARAM_EPINT=1e-8,
