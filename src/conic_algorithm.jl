@@ -1072,14 +1072,14 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
 
     # Add lazy cuts callback to add dual and primal conic cuts
     function callback_lazy(cb)
-        println("doing lazy cb")
+        # println("doing lazy cb")
 
         # Get integer solution
         soln_int = getvalue(m.x_int)
 
         if haskey(cache_cuts, soln_int)
             # Integer solution has been seen before
-            println("soln seen before")
+            # println("soln seen before")
             logs[:n_repeat] += 1
 
             # Re-add dual cuts until one is infeasible
@@ -1091,7 +1091,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
             end
         else
             # Integer solution is new
-            println("soln new")
+            # println("soln new")
 
             # Solve conic subproblem and save dual in dict (empty if conic failure)
             (status_conic, dual_conic) = solve_conicsub!(m, soln_int, logs)
@@ -1102,7 +1102,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
 
             if (status_conic == :Optimal) || (status_conic == :Suboptimal) || (status_conic == :Infeasible)
                 # Add all dual cuts to MIP
-                println("Conic status: $status_conic")
+                # println("Conic status: $status_conic")
                 is_feas = true
 
                 for n in 1:m.num_soc
@@ -1145,7 +1145,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
                     return
                 end
             else
-                println("Conic status: $status_conic")
+                # println("Conic status: $status_conic")
             end
         end
 
@@ -1207,7 +1207,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
         # If have a new best feasible solution since last heuristic solution added
         # println("doing heuristic cb")
         if m.isnew_feas
-            println("adding new sol")
+            # println("adding new sol")
             push!(cache_soln[m.best_int], m.best_cont)
 
             # Set MIP solution to the new best feasible solution
@@ -1222,10 +1222,10 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
 
     # Add incumbent callback to tell MIP solver whether solutions are conic feasible incumbents or not
     function callback_incumbent(cb)
-        println("doing incumbent cb")
+        # println("doing incumbent cb")
 
         if getvalue(m.x_cont) in cache_soln[getvalue(m.x_int)]
-            println("seen in lazy or heuristic: accepting")
+            # println("seen in lazy or heuristic: accepting")
             CPLEX.acceptincumbent(cb)
             return
         end
@@ -1233,14 +1233,14 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
         # If any SOC variables are SOC infeasible, return false
         for vars in m.vars_soc
             if (sumabs2(getvalue(vars[j]) for j in 2:length(vars)) - getvalue(vars[1])^2) > m.tol_prim_infeas
-                println("checked feas: rejecting")
+                # println("checked feas: rejecting")
                 CPLEX.rejectincumbent(cb)
                 return
             end
         end
 
         # No conic infeasibility: allow solution as new incumbent
-        println("checked feas: accepting")
+        # println("checked feas: accepting")
         CPLEX.acceptincumbent(cb)
         return
     end
