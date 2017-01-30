@@ -412,7 +412,6 @@ function MathProgBase.optimize!(m::PajaritoConicModel)
     end
 
     if (m.status != :Infeasible) && (m.status != :UnboundedRelaxation) && (m.status != :ConicFailure)
-        tic()
         if m.log_level > 1
             @printf "\nCreating conic subproblem model..."
         end
@@ -428,9 +427,8 @@ function MathProgBase.optimize!(m::PajaritoConicModel)
             MathProgBase.loadproblem!(m.model_conic, m.c_sub_cont, m.A_sub_cont, m.b_sub_int, m.cone_con_sub, m.cone_var_sub)
         end
         if m.log_level > 1
-            @printf "...Done %8.2fs\n" logs[:conic_proc]
+            @printf "...Done\n"
         end
-        logs[:conic_proc] += toq()
 
         # Initialize and begin iterative or MIP-solver-driven algorithm
         m.best_slck = zeros(length(m.b_sub))
@@ -1228,9 +1226,7 @@ end
 # Solve conic subproblem given some solution to the integer variables, update incumbent
 function solve_conicsub!(m::PajaritoConicModel, soln_int::Vector{Float64}, logs::Dict{Symbol,Real})
     # Calculate new b vector from integer solution and solve conic model
-    tic()
     m.b_sub_int = m.b_sub - m.A_sub_int*soln_int
-    logs[:conic_proc] += toq()
 
     # Load/solve conic model
     tic()
@@ -1252,7 +1248,6 @@ function solve_conicsub!(m::PajaritoConicModel, soln_int::Vector{Float64}, logs:
     logs[:conic_solve] += toq()
     logs[:n_conic] += 1
 
-    tic()
     status_conic = MathProgBase.status(m.model_conic)
     if (status_conic == :Optimal) || (status_conic == :Suboptimal) || (status_conic == :Infeasible)
         # Get dual vector
@@ -1283,14 +1278,11 @@ function solve_conicsub!(m::PajaritoConicModel, soln_int::Vector{Float64}, logs:
         MathProgBase.freemodel!(m.model_conic)
     end
 
-    logs[:conic_proc] += toq()
-
     return (status_conic, dual_conic)
 end
 
 # Construct and warm-start MIP solution using best solution
 function set_best_soln!(m::PajaritoConicModel, cb, logs::Dict{Symbol,Real})
-    tic()
     set_soln!(m, cb, m.x_int, m.best_int)
     set_soln!(m, cb, m.x_cont, m.best_cont)
 
@@ -1298,7 +1290,6 @@ function set_best_soln!(m::PajaritoConicModel, cb, logs::Dict{Symbol,Real})
         set_soln!(m, cb, m.vars_soc[n], m.best_slck, m.rows_sub_soc[n])
         set_dagg_soln!(m, cb, m.vars_dagg_soc[n], m.best_slck, m.rows_sub_soc[n])
     end
-    logs[:conic_soln] += toq()
 end
 
 # Call setvalue or setsolutionvalue solution for a vector of variables and a solution vector and corresponding solution indices
@@ -1345,6 +1336,7 @@ function create_logs()
     logs[:relax_solve] = 0. # Solving initial conic relaxation model
     logs[:oa_alg] = 0.      # Performing outer approximation algorithm
     logs[:mip_solve] = 0.   # Solving the MIP model
+    logs[:conic_solve] = 0. # Solving conic subproblem model
 
     # Counters
     logs[:n_conic] = 0      # Number of conic subproblem solves
@@ -1399,6 +1391,7 @@ function print_finish(m::PajaritoConicModel, logs::Dict{Symbol,Real})
     @printf " -- Create MIP data     = %14.2e\n" logs[:data_mip]
     @printf " -- Load/solve relax    = %14.2e\n" logs[:relax_solve]
     @printf " - MIP-driven algorithm = %14.2e\n" logs[:oa_alg]
+    @printf " -- Solve conic model   = %14.2e\n" logs[:conic_solve]
     @printf "\n"
     flush(STDOUT)
 end
