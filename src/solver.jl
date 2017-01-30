@@ -107,25 +107,3 @@ function MathProgBase.ConicModel(s::PajaritoSolver)
         error("Continuous solver specified is neither a conic solver nor a nonlinear solver recognized by MathProgBase\n")
     end
 end
-
-
-# # Create Pajarito nonlinear model: can solve with nonlinear algorithm only
-# function MathProgBase.NonlinearModel(s::PajaritoSolver)
-#     if !applicable(MathProgBase.NonlinearModel, s.cont_solver)
-#         error("Continuous solver specified is not a nonlinear solver recognized by MathProgBase\n")
-#     end
-#
-#     # Translate options into old nonlinearmodel.jl fields
-#     verbose = s.log_level
-#     algorithm = (s.mip_solver_drives ? "BC" : "OA")
-#     mip_solver = s.mip_solver
-#     cont_solver = s.cont_solver
-#     opt_tolerance = s.rel_gap
-#     time_limit = s.timeout
-#
-#     return PajaritoNonlinearModel(verbose, algorithm, mip_solver, cont_solver, opt_tolerance, time_limit)
-# end
-#
-#
-# # Create Pajarito linear-quadratic model: can solve with nonlinear algorithm wrapped with NonlinearToLPQPBridge
-# MathProgBase.LinearQuadraticModel(s::PajaritoSolver) = MathProgBase.NonlinearToLPQPBridge(MathProgBase.NonlinearModel(s))

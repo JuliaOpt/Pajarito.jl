@@ -3,5 +3,4 @@ ECOS
 GLPKMathProgInterface
 Cbc
 Clp
-Ipopt
 Convex

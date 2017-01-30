@@ -3,23 +3,6 @@
 #  License, v. 2.0. If a copy of the MPL was not distributed with this
 #  file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-# function runconicdefaulttests(mip_solver_drives, log)
-#     facts("Default solvers test") do
-#         context("With $(mip_solver_drives ? "MIP-driven" : "Iterative"), defaulting to $(typeof(MathProgBase.defaultMIPsolver)) and $(typeof(MathProgBase.defaultConicsolver))") do
-#             x = Convex.Variable(1,:Int)
-#
-#             problem = Convex.maximize(3x,
-#                                 x <= 10,
-#                                 x^2 <= 9)
-#
-#             Convex.solve!(problem, PajaritoSolver(mip_solver_drives=mip_solver_drives, log_level=log))
-#
-#             @fact problem.optval --> roughly(9.0, TOL)
-#             @fact problem.status --> :Optimal
-#         end
-#     end
-# end
-
 function runconictests(mip_solver_drives, mip_solver, conic_solver, log)
     algorithm = mip_solver_drives ? "MIP-driven" : "Iterative"
 
@@ -52,91 +35,93 @@ function runconictests(mip_solver_drives, mip_solver, conic_solver, log)
         end
     end
 
-    # facts("Continuous problem") do
-    #     context("With $algorithm, $(typeof(mip_solver)) and $(typeof(conic_solver))") do
-    #         x = Convex.Variable(1)
-    #         y = Convex.Variable(1, Convex.Positive())
-    #
-    #         problem = Convex.maximize(3x + y,
-    #                             x >= 0,
-    #                             3x + 2y <= 10,
-    #                             exp(x) <= 10)
-    #
-    #        @fact_throws ErrorException Convex.solve!(problem, PajaritoSolver(mip_solver_drives=mip_solver_drives, mip_solver=mip_solver, cont_solver=conic_solver, log_level=log))
-    #    end
-    # end
+    facts("Continuous problem") do
+        context("With $algorithm, $(typeof(mip_solver)) and $(typeof(conic_solver))") do
+            x = Convex.Variable(1)
+            y = Convex.Variable(1, Convex.Positive())
 
-    # facts("Maximization problem") do
-    #     context("With $algorithm, $(typeof(mip_solver)) and $(typeof(conic_solver))") do
-    #         x = Convex.Variable(1,:Int)
-    #         y = Convex.Variable(1, Convex.Positive())
-    #
-    #         problem = Convex.maximize(3x + y,
-    #                             x >= 0,
-    #                             3x + 2y <= 10,
-    #                             exp(x) <= 10)
-    #
-    #        Convex.solve!(problem, PajaritoSolver(mip_solver_drives=mip_solver_drives, mip_solver=mip_solver, cont_solver=conic_solver, log_level=log))
-    #
-    #        @fact problem.optval --> roughly(8.0, TOL)
-    #        @fact problem.status --> :Optimal
-    #    end
-    # end
-    #
-    # facts("Solver test") do
-    #     context("With $algorithm, $(typeof(mip_solver)) and $(typeof(conic_solver))") do
-    #         x = Convex.Variable(1,:Int)
-    #         y = Convex.Variable(1)
-    #
-    #         problem = Convex.minimize(-3x - y,
-    #                            x >= 1,
-    #                            y >= 0,
-    #                            3x + 2y <= 10,
-    #                            x^2 <= 5,
-    #                            exp(y) + x <= 7)
-    #
-    #         Convex.solve!(problem, PajaritoSolver(mip_solver_drives=mip_solver_drives, mip_solver=mip_solver, cont_solver=conic_solver, log_level=log))
-    #
-    #         @fact problem.status --> :Optimal
-    #         @fact Convex.evaluate(x) --> roughly(2.0, TOL)
-    #     end
-    # end
+            problem = Convex.maximize(3x + y,
+                                x >= 0,
+                                3x + 2y <= 10,
+                                exp(x) <= 10)
 
-    # facts("No SOC disaggregation test") do
-    #     context("With $algorithm, $(typeof(mip_solver)) and $(typeof(conic_solver))") do
-    #         x = Convex.Variable(1,:Int)
-    #         y = Convex.Variable(1)
-    #
-    #         problem = Convex.minimize(-3x - y,
-    #                            x >= 1,
-    #                            y >= 0,
-    #                            3x + 2y <= 10,
-    #                            x^2 <= 5,
-    #                            exp(y) + x <= 7)
-    #
-    #         Convex.solve!(problem, PajaritoSolver(mip_solver_drives=mip_solver_drives, soc_disagg=false, mip_solver=mip_solver, cont_solver=conic_solver, log_level=log))
-    #
-    #         @fact problem.status --> :Optimal
-    #         @fact Convex.evaluate(x) --> roughly(2.0, TOL)
-    #     end
-    # end
-    #
-    # facts("Solver test 2") do
-    #     context("With $algorithm, $(typeof(mip_solver)) and $(typeof(conic_solver))") do
-    #         x = Convex.Variable(1,:Int)
-    #         y = Convex.Variable(1, Convex.Positive())
-    #
-    #         problem = Convex.minimize(-3x - y,
-    #                            x >= 1,
-    #                            3x + 2y <= 30,
-    #                            exp(y^2) + x <= 7)
-    #
-    #         Convex.solve!(problem, PajaritoSolver(mip_solver_drives=mip_solver_drives, mip_solver=mip_solver, cont_solver=conic_solver, log_level=log, rel_gap=1e-4))
-    #
-    #         @fact problem.status --> :Optimal
-    #         @fact Convex.evaluate(x) --> roughly(6.0, TOL)
-    #     end
-    # end
+           @fact_throws ErrorException Convex.solve!(problem, PajaritoSolver(mip_solver_drives=mip_solver_drives, mip_solver=mip_solver, cont_solver=conic_solver, log_level=log))
+       end
+    end
+
+    facts("Maximization problem") do
+        context("With $algorithm, $(typeof(mip_solver)) and $(typeof(conic_solver))") do
+            x = Convex.Variable(1,:Int)
+            y = Convex.Variable(1, Convex.Positive())
+
+            problem = Convex.maximize(3x + y,
+                                x >= 0,
+                                3x + 2y <= 10,
+                                exp(x) <= 10)
+
+           Convex.solve!(problem, PajaritoSolver(mip_solver_drives=mip_solver_drives, mip_solver=mip_solver, cont_solver=conic_solver, log_level=log))
+
+           @fact problem.optval --> roughly(8.0, TOL)
+           @fact problem.status --> :Optimal
+       end
+    end
+
+    facts("Solver test") do
+        context("With $algorithm, $(typeof(mip_solver)) and $(typeof(conic_solver))") do
+            x = Convex.Variable(1,:Int)
+            y = Convex.Variable(1)
+
+            problem = Convex.minimize(-3x - y,
+                               x >= 1,
+                               y >= 0,
+                               3x + 2y <= 10,
+                               x^2 <= 5,
+                               exp(y) + x <= 7)
+
+            Convex.solve!(problem, PajaritoSolver(mip_solver_drives=mip_solver_drives, mip_solver=mip_solver, cont_solver=conic_solver, log_level=log))
+
+            @fact problem.status --> :Optimal
+            @fact Convex.evaluate(x) --> roughly(2.0, TOL)
+        end
+    end
+
+    facts("No SOC disaggregation test") do
+        context("With $algorithm, $(typeof(mip_solver)) and $(typeof(conic_solver))") do
+            x = Convex.Variable(1,:Int)
+            y = Convex.Variable(1)
+
+            problem = Convex.minimize(-3x - y,
+                               x >= 1,
+                               y >= 0,
+                               3x + 2y <= 10,
+                               x^2 <= 5,
+                               exp(y) + x <= 7)
+
+            Convex.solve!(problem, PajaritoSolver(mip_solver_drives=mip_solver_drives, soc_disagg=false, mip_solver=mip_solver, cont_solver=conic_solver, log_level=log))
+
+            @fact problem.status --> :Optimal
+            @fact Convex.evaluate(x) --> roughly(2.0, TOL)
+        end
+    end
+
+    if !contains(string(typeof(conic_solver)),"ECOS")# ECOS reports "close to optimal" on this tiny problem
+        facts("Solver test 2") do
+            context("With $algorithm, $(typeof(mip_solver)) and $(typeof(conic_solver))") do
+                x = Convex.Variable(1,:Int)
+                y = Convex.Variable(1, Convex.Positive())
+
+                problem = Convex.minimize(-3x - y,
+                                   x >= 1,
+                                   3x + 2y <= 30,
+                                   exp(y^2) + x <= 7)
+
+                Convex.solve!(problem, PajaritoSolver(mip_solver_drives=mip_solver_drives, mip_solver=mip_solver, cont_solver=conic_solver, log_level=log, rel_gap=1e-4))
+
+                @fact problem.status --> :Optimal
+                @fact Convex.evaluate(x) --> roughly(6.0, TOL)
+            end
+        end
+    end
 
     ## Currently returns UnboundedRelaxation because conic solver interprets infeasible dual incorrectly
     # facts("Conic failure with RSOC - infinite duality gap") do
@@ -212,7 +197,6 @@ function runconictests(mip_solver_drives, mip_solver, conic_solver, log)
             @fact MathProgBase.status(m) --> :Optimal
             @fact MathProgBase.getobjval(m) --> roughly(-sqrt(2.0), TOL)
             vals = MathProgBase.getsolution(m)
-            @show vals
             @fact vals[1] --> roughly(1, TOL)
             @fact vals[2] --> roughly(1.0/sqrt(2.0), TOL)
             @fact vals[3] --> roughly(1.0/sqrt(2.0), TOL)
@@ -238,7 +222,6 @@ function runconictests(mip_solver_drives, mip_solver, conic_solver, log)
             @fact MathProgBase.status(m) --> :Optimal
             @fact MathProgBase.getobjval(m) --> roughly(-sqrt(2.0), TOL)
             vals = MathProgBase.getsolution(m)
-            @show vals
             @fact vals[1] --> roughly(1, TOL)
             @fact vals[2] --> roughly(0, TOL)
             @fact vals[3] --> roughly(1.0/sqrt(2.0), TOL)

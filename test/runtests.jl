@@ -4,20 +4,17 @@
 #  file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 using Pajarito
-using CPLEX
-using Mosek, ECOS
 using JuMP
 import Convex
 using FactCheck
 
 include("conictest.jl")
-include("sdptest.jl")
 
 # Set fact check tolerance
 TOL = 1e-3
 
 # Option to print with log_level
-log = 3
+log = 0
 
 # Run tests
 mip = CPLEX.CplexSolver(
@@ -31,6 +28,5 @@ mip = CPLEX.CplexSolver(
     CPX_PARAM_MIPCBREDLP=0
     )
 runconictests(true, mip, ECOS.ECOSSolver(verbose=false), log)
-# runsdptests(true, mip, Mosek.MosekSolver(LOG=0), log)
 
 FactCheck.exitstatus()

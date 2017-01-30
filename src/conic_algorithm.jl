@@ -147,7 +147,6 @@ type PajaritoConicModel <: MathProgBase.AbstractConicModel
 
         # Warnings
         if log_level > 1
-            warn("If matrix A has nonzero entries smaller than zero tolerance, performance may be improved by fixing these values to zero\n")
             if !solve_relax
                 warn("Not solving the conic continuous relaxation problem; Pajarito may return status :MIPFailure if the outer approximation MIP is unbounded\n")
             end
@@ -405,7 +404,6 @@ function MathProgBase.optimize!(m::PajaritoConicModel)
             end
 
             # Add initial dual cuts to MIP model
-
             dual_conic = MathProgBase.getdual(model_relax)
             for n in 1:m.num_soc
                 dual = dual_conic[rows_relax_soc[n]]
@@ -438,7 +436,6 @@ function MathProgBase.optimize!(m::PajaritoConicModel)
                     end
                 end
             end
-
         end
 
         # Free the conic model
@@ -1066,7 +1063,7 @@ end
 # Solve the MIP model using true MIP-solver-driven callback algorithm with incumbent callbacks
 function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
     if isfinite(m.timeout) && applicable(MathProgBase.setparameters!, m.mip_solver)
-        MathProgBase.setparameters!(m.mip_solver, TimeLimit=(m.timeout - (time() - logs[:total])))
+        MathProgBase.setparameters!(m.mip_solver, TimeLimit=max(0., m.timeout - (time() - logs[:total])))
         setsolver(m.model_mip, m.mip_solver)
     end
 
@@ -1160,7 +1157,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
             vars_dagg = m.vars_dagg_soc[n]
             prim = getvalue(vars)
 
-            if (vecnorm(prim[j] for j in 2:length(prim)) - prim[1]) > m.tol_prim_infeas
+            if (sumabs2(prim[j] for j in 2:length(prim)) - prim[1]^2) > m.tol_prim_infeas
                 is_feas = false
             else
                 continue
@@ -1235,7 +1232,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
 
         # If any SOC variables are SOC infeasible, return false
         for vars in m.vars_soc
-            if (vecnorm(getvalue(vars[j]) for j in 2:length(vars)) - getvalue(vars[1])) > m.tol_prim_infeas
+            if (sumabs2(getvalue(vars[j]) for j in 2:length(vars)) - getvalue(vars[1])^2) > m.tol_prim_infeas
                 println("checked feas: rejecting")
                 CPLEX.rejectincumbent(cb)
                 return
@@ -1333,7 +1330,7 @@ function solve_conicsub!(m::PajaritoConicModel, soln_int::Vector{Float64}, logs:
     end
 
     # Check if have new feasible solution
-    if (status_conic == :Optimal) || (status_conic == :Suboptimal)
+    if status_conic == :Optimal
         soln_cont = MathProgBase.getsolution(m.model_conic)
         logs[:n_feas] += 1
 

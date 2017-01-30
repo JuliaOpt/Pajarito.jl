@@ -15,11 +15,9 @@ __precompile__()
 
 module Pajarito
     import MathProgBase
-    # using ConicNonlinearBridge
     import CPLEX
 
     include("conic_dual_solver.jl")
     include("solver.jl")
     include("conic_algorithm.jl")
-    # include("nonlinear_algorithm.jl")
 end
