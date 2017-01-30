@@ -362,24 +362,6 @@ function MathProgBase.optimize!(m::PajaritoConicModel)
             warn("Initial conic relaxation status was $status_relax: terminating Pajarito\n")
             m.status = :UnboundedRelaxation
         elseif (status_relax != :Optimal) && (status_relax != :Suboptimal)
-            if m.log_level > 2
-                # Conic solver failed: dump the conic problem
-                println("Conic failure: dumping conic subproblem data")
-                @show status_relax
-                println()
-                @show c_new
-                println()
-                @show findnz(A_new)
-                println()
-                @show b_new
-                println()
-                @show cone_con_new
-                println()
-                @show cone_var_new
-                println()
-                # Mosek.writedata(model_relax.task, "$(round(Int, time())).task")    # For MOSEK debug only: dump task
-            end
-
             warn("Apparent conic solver failure with status $status_relax: terminating Pajarito\n")
             m.status = :ConicFailure
         else
@@ -429,28 +411,27 @@ function MathProgBase.optimize!(m::PajaritoConicModel)
         end
     end
 
-    tic()
-    if m.log_level > 1
-        @printf "\nCreating conic subproblem model..."
-    end
-    if m.dualize_sub
-        solver_conicsub = ConicDualWrapper(conicsolver=m.cont_solver)
-    else
-        solver_conicsub = m.cont_solver
-    end
-    m.model_conic = MathProgBase.ConicModel(solver_conicsub)
-    if method_exists(MathProgBase.setbvec!, (typeof(m.model_conic), Vector{Float64}))
-        # Can use setbvec! on the conic subproblem model: load it
-        m.update_conicsub = true
-        MathProgBase.loadproblem!(m.model_conic, m.c_sub_cont, m.A_sub_cont, m.b_sub_int, m.cone_con_sub, m.cone_var_sub)
-    end
-    if m.log_level > 1
-        @printf "...Done %8.2fs\n" logs[:conic_proc]
-    end
-    logs[:conic_proc] += toq()
-
-
     if (m.status != :Infeasible) && (m.status != :UnboundedRelaxation) && (m.status != :ConicFailure)
+        tic()
+        if m.log_level > 1
+            @printf "\nCreating conic subproblem model..."
+        end
+        if m.dualize_sub
+            solver_conicsub = ConicDualWrapper(conicsolver=m.cont_solver)
+        else
+            solver_conicsub = m.cont_solver
+        end
+        m.model_conic = MathProgBase.ConicModel(solver_conicsub)
+        if method_exists(MathProgBase.setbvec!, (typeof(m.model_conic), Vector{Float64}))
+            # Can use setbvec! on the conic subproblem model: load it
+            m.update_conicsub = true
+            MathProgBase.loadproblem!(m.model_conic, m.c_sub_cont, m.A_sub_cont, m.b_sub_int, m.cone_con_sub, m.cone_var_sub)
+        end
+        if m.log_level > 1
+            @printf "...Done %8.2fs\n" logs[:conic_proc]
+        end
+        logs[:conic_proc] += toq()
+
         # Initialize and begin iterative or MIP-solver-driven algorithm
         m.best_slck = zeros(length(m.b_sub))
         if m.log_level > 0
@@ -1277,24 +1258,6 @@ function solve_conicsub!(m::PajaritoConicModel, soln_int::Vector{Float64}, logs:
         # Get dual vector
         dual_conic = MathProgBase.getdual(m.model_conic)
     else
-        if m.log_level > 2
-            # Conic solver failed: dump the conic problem
-            println("Conic failure: dumping conic subproblem data")
-            @show status_conic
-            println()
-            @show m.c_sub_cont
-            println()
-            @show findnz(m.A_sub_cont)
-            println()
-            @show m.b_sub_int
-            println()
-            @show m.cone_con_sub
-            println()
-            @show m.cone_var_sub
-            println()
-            # Mosek.writedata(m.model_conic.task, "$(round(Int, time())).task")    # For MOSEK debug only: dump task
-        end
-
         dual_conic = Float64[]
     end
 
@@ -1370,28 +1333,6 @@ end
  Logging and printing functions
 =========================================================#
 
-# Reset all summary values for all cones in preparation for next iteration
-function reset_cone_summary!(m::PajaritoConicModel)
-    if m.log_level <= 2
-        return
-    end
-
-    if m.num_soc > 0
-        m.summ_soc[:outer_max_n] = 0
-        m.summ_soc[:outer_max] = 0.
-        m.summ_soc[:outer_min_n] = 0
-        m.summ_soc[:outer_min] = 0.
-        m.summ_soc[:dual_max_n] = 0
-        m.summ_soc[:dual_max] = 0.
-        m.summ_soc[:dual_min_n] = 0
-        m.summ_soc[:dual_min] = 0.
-        m.summ_soc[:cut_max_n] = 0
-        m.summ_soc[:cut_max] = 0.
-        m.summ_soc[:cut_min_n] = 0
-        m.summ_soc[:cut_min] = 0.
-    end
-end
-
 # Create dictionary of logs for timing and iteration counts
 function create_logs()
     logs = Dict{Symbol,Real}()
@@ -1404,15 +1345,9 @@ function create_logs()
     logs[:relax_solve] = 0. # Solving initial conic relaxation model
     logs[:oa_alg] = 0.      # Performing outer approximation algorithm
     logs[:mip_solve] = 0.   # Solving the MIP model
-    logs[:conic_proc] = 0.  # Processing conic b vector and dual and solution
-    logs[:conic_solve] = 0. # Solving conic subproblem model
-    logs[:conic_soln] = 0.  # Adding new feasible conic solution
-    logs[:dual_cuts] = 0.   # Adding dual cuts
-    logs[:outer_inf] = 0.   # Calculating outer inf and adding primal cuts
 
     # Counters
     logs[:n_conic] = 0      # Number of conic subproblem solves
-    logs[:n_mip] = 0        # Number of MIP solves for iterative
     logs[:n_feas] = 0       # Number of feasible solutions encountered
     logs[:n_repeat] = 0     # Number of times integer solution repeats
 
@@ -1429,21 +1364,6 @@ function print_cones(m::PajaritoConicModel)
     @printf "\n%-10s | %-8s | %-8s | %-8s\n" "Cone" "Count" "Min dim" "Max dim"
     if m.num_soc > 0
         @printf "%10s | %8d | %8d | %8d\n" "SOC" m.num_soc m.summ_soc[:min_dim] m.summ_soc[:max_dim]
-    end
-    flush(STDOUT)
-end
-
-# Print dual cone infeasibilities of dual vectors only
-function print_inf_dual(m::PajaritoConicModel)
-    if m.log_level <= 2
-        return
-    end
-
-    @printf "\nInitial dual cuts summary:"
-    @printf "\n%-10s | %-32s\n" "Cone" "Dual cone infeas"
-    @printf "%-10s | %-6s %-8s  %-6s %-8s\n" "" "Infeas" "Worst" "Feas" "Worst"
-    if m.num_soc > 0
-        @printf "%10s | %5d  %8.2e  %5d  %8.2e\n" "SOC" m.summ_soc[:dual_max_n] m.summ_soc[:dual_max] m.summ_soc[:dual_min_n] m.summ_soc[:dual_min]
     end
     flush(STDOUT)
 end
@@ -1469,7 +1389,6 @@ function print_finish(m::PajaritoConicModel, logs::Dict{Symbol,Real})
         return
     end
 
-    @printf " - MIP solve count      = %14d\n" logs[:n_mip]
     @printf " - Conic solve count    = %14d\n" logs[:n_conic]
     @printf " - Feas. solution count = %14d\n" logs[:n_feas]
     @printf " - Integer repeat count = %14d\n" logs[:n_repeat]
@@ -1480,11 +1399,6 @@ function print_finish(m::PajaritoConicModel, logs::Dict{Symbol,Real})
     @printf " -- Create MIP data     = %14.2e\n" logs[:data_mip]
     @printf " -- Load/solve relax    = %14.2e\n" logs[:relax_solve]
     @printf " - MIP-driven algorithm = %14.2e\n" logs[:oa_alg]
-    @printf " -- Solve conic model   = %14.2e\n" logs[:conic_solve]
-    @printf " -- Process conic data  = %14.2e\n" logs[:conic_proc]
-    @printf " -- Add conic solution  = %14.2e\n" logs[:conic_soln]
-    @printf " -- Add dual cuts       = %14.2e\n" logs[:dual_cuts]
-    @printf " -- Use outer inf/cuts  = %14.2e\n" logs[:outer_inf]
     @printf "\n"
     flush(STDOUT)
 end
