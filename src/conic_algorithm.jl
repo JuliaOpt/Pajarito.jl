@@ -411,7 +411,7 @@ function MathProgBase.optimize!(m::PajaritoConicModel)
         end
     end
 
-    if (m.status != :Infeasible) && (m.status != :UnboundedRelaxation) && (m.status != :ConicFailure)
+    if (m.status != :Infeasible) && (m.status != :UnboundedRelaxation)
         if m.log_level > 1
             @printf "\nCreating conic subproblem model..."
         end
