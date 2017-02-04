@@ -1039,7 +1039,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
 
         # Get integer solution, check if new
         soln_int = getvalue(m.x_int)
-        if soln_int in cache
+        if !(soln_int in cache)
             # Solve conic subproblem and save dual in dict (empty if conic failure)
             (status_conic, dual_conic) = solve_conicsub!(m, soln_int, logs)
             push!(cache, soln_int)
