@@ -125,8 +125,11 @@ type PajaritoConicModel <: MathProgBase.AbstractConicModel
         if !mip_solver_drives
             error("This branch of Pajarito is only for the MSD algorithm\n")
         end
+        if !viol_cuts_only
+            error("This branch of Pajarito requires viol cuts only\n")
+        end
         if !isa(mip_solver, CPLEX.CplexSolver)
-            error("This branch of Pajarito requires that you use CplexSolver as the MIP solver\n")
+            error("This branch of Pajarito requires CplexSolver as the MIP solver\n")
         end
         if soc_in_mip
             error("This branch of Pajarito cannot do SOC in MIP\n")
@@ -135,10 +138,10 @@ type PajaritoConicModel <: MathProgBase.AbstractConicModel
             error("This branch of Pajarito cannot do MIP solution rounding\n")
         end
         if !prim_cuts_assist
-            error("This branch of Pajarito requires that you use primal cuts assist\n")
+            error("This branch of Pajarito requires primal cuts assist\n")
         end
         if prim_cuts_only || prim_cuts_always
-            error("This branch of Pajarito requires that you do not use primal cuts only or always\n")
+            error("This branch of Pajarito requires primal cuts only or always\n")
         end
 
         # Warnings
@@ -362,8 +365,7 @@ function MathProgBase.optimize!(m::PajaritoConicModel)
             warn("Initial conic relaxation status was $status_relax: terminating Pajarito\n")
             m.status = :UnboundedRelaxation
         elseif (status_relax != :Optimal) && (status_relax != :Suboptimal)
-            warn("Apparent conic solver failure with status $status_relax: terminating Pajarito\n")
-            m.status = :ConicFailure
+            warn("Apparent conic solver failure with status $status_relax\n")
         else
             if m.log_level >= 1
                 @printf " - Relaxation status    = %14s\n" status_relax
@@ -1018,43 +1020,39 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
         setsolver(m.model_mip, m.mip_solver)
     end
 
-    cache_cuts = Dict{Vector{Float64},Set{JuMP.AffExpr}}()
-    cache_soln = Dict{Vector{Float64},Set{Vector{Float64}}}()
+    cache = Set{Vector{Float64}}()
+    viol_cones = trues(m.num_soc)
 
     # Add lazy cuts callback to add dual and primal conic cuts
     function callback_lazy(cb)
         # println("doing lazy cb")
-        # Get integer solution
-        soln_int = getvalue(m.x_int)
-
-        if haskey(cache_cuts, soln_int)
-            # Integer solution has been seen before
-            # println("soln seen before")
-            logs[:n_repeat] += 1
-
-            # Re-add dual cuts until one is infeasible
-            for cut_expr in cache_cuts[soln_int]
-                if -getvalue(cut_expr) > m.tol_prim_infeas
-                    @lazyconstraint(cb, cut_expr >= 0.)
-                    return
-                end
+        # If any SOC variables are SOC infeasible, must continue
+        is_feas = true
+        fill!(viol_cones, false)
+        for n in 1:m.num_soc
+            vars = m.vars_soc[n]
+            if (sumabs2(getvalue(vars[j]) for j in 2:length(vars)) - getvalue(vars[1])^2) > m.tol_prim_infeas
+                is_feas = false
+                viol_cones[n] = true
             end
-        else
-            # Integer solution is new
-            # println("soln new")
+        end
+        if is_feas
+            return
+        end
+
+        # Get integer solution, check if new
+        soln_int = getvalue(m.x_int)
+        if !haskey(cache, soln_int)
             # Solve conic subproblem and save dual in dict (empty if conic failure)
             (status_conic, dual_conic) = solve_conicsub!(m, soln_int, logs)
-
-            cuts = Set{JuMP.AffExpr}()
-            cache_cuts[soln_int] = cuts
-            cache_soln[soln_int] = Set{Vector{Float64}}()
+            push!(cache, soln_int)
 
             if (status_conic == :Optimal) || (status_conic == :Suboptimal) || (status_conic == :Infeasible)
-                # Add all dual cuts to MIP
-                # println("Conic status: $status_conic")
-                is_feas = true
-
                 for n in 1:m.num_soc
+                    if !viol_cones[n]
+                        continue
+                    end
+
                     dual = dual_conic[m.rows_sub_soc[n]]
                     vars = m.vars_soc[n]
                     vars_dagg = m.vars_dagg_soc[n]
@@ -1077,77 +1075,80 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
                         continue
                     end
 
-                    # Add all disagg dual cuts, discard if dual j is small
+                    # Add violated disagg dual cuts, discard if dual j is small
                     for j in 2:length(dual)
                         if dual[j] != 0.
                             @expression(m.model_mip, cut_expr, (dual[j] / dual[1])^2 * vars[1] + 2. * vars_dagg[j-1] + (2 * dual[j] / dual[1]) * vars[j])
-                            @lazyconstraint(cb, cut_expr >= 0.)
-                            if -getvalue(cut_expr) > m.tol_prim_infeas
-                                is_feas = false
+                            if -getvalue(cut_expr) > m.tol_zero
+                                @lazyconstraint(cb, cut_expr >= 0.)
                             end
-                            push!(cuts, cut_expr)
                         end
                     end
                 end
-
-                if !is_feas
-                    return
-                end
-            else
-                # println("Conic status: $status_conic")
+                return
             end
+        else
+            logs[:n_repeat] += 1
+
+            # # Re-add dual cuts until one is infeasible
+            # for cut_expr in shuffle!(cache_cuts[soln_int])
+            #     if -getvalue(cut_expr) > m.tol_prim_infeas
+            #         @lazyconstraint(cb, cut_expr >= 0.)
+            #         return
+            #     end
+            # end
         end
 
-        # No violating dual cuts added, so check primal feas and add primal cuts
-        is_feas = true
-        viol_cut = false
-        for n in 1:m.num_soc
-            vars = m.vars_soc[n]
-            vars_dagg = m.vars_dagg_soc[n]
-            prim = getvalue(vars)
-
-            if (sumabs2(prim[j] for j in 2:length(prim)) - prim[1]^2) > m.tol_prim_infeas
-                is_feas = false
-            else
+        for n in randperm(m.num_soc)
+            if !viol_cones[n]
                 continue
             end
 
-            # Rescale by largest absolute value or discard if near zero, discard if epigraph variable is small
+            vars = m.vars_soc[n]
+            prim = getvalue(vars)
+            # vars_dagg = m.vars_dagg_soc[n]
+
+            # Rescale
             if maxabs(prim) > m.tol_zero
                 scale!(prim, (1. / maxabs(prim)))
             else
                 continue
             end
-            if prim[1] <= m.tol_zero
-                continue
-            end
 
-            # Add disagg primal cuts, discard if primal variable j is small
-            # 2*dj >= 2xj`/y`*xj - (xj'/y`)^2*y
-            for j in 2:length(prim)
-                if prim[j] != 0.
-                    @expression(m.model_mip, cut_expr, (prim[j] / prim[1])^2 * vars[1] + 2. * vars_dagg[j-1] - (2 * prim[j] / prim[1]) * vars[j])
-                    @lazyconstraint(cb, cut_expr >= 0.)
-                    if -getvalue(cut_expr) > m.tol_prim_infeas
-                        viol_cut = true
-                    end
+            # Sanitize: remove near-zeros
+            for ind in 1:dim
+                if abs(prim[ind]) < m.tol_zero
+                    prim[ind] = 0.
                 end
             end
 
-            if viol_cut
+            # Discard if norm of non-epigraph variables is zero
+            solnorm = vecnorm(prim[j] for j in 2:dim)
+            if solnorm <= m.tol_zero
+                continue
+            end
+
+            # Add full primal cut
+            # x`*x / ||x`|| <= y
+            @expression(m.model_mip, cut_expr, vars[1] - sum(prim[j] / solnorm * vars[j] for j in 2:dim))
+            if -getvalue(cut_expr) > m.tol_zero
+                @lazyconstraint(m.cb_lazy, cut_expr >= 0.)
+                # Should we finish after adding a violated cut? empirical question
                 return
             end
-        end
 
-        # No violated cuts added
-        if is_feas
-            # But feasible, so save
-            push!(cache_soln[soln_int], getvalue(m.x_cont))
-            return
+            # # Disagg cuts, discard if primal variable j is small
+            # # 2*dj >= 2xj`/y`*xj - (xj'/y`)^2*y
+            # for j in 2:length(prim)
+            #     if prim[j] != 0.
+            #         @expression(m.model_mip, cut_expr, (prim[j] / prim[1])^2 * vars[1] + 2. * vars_dagg[j-1] - (2 * prim[j] / prim[1]) * vars[j])
+            #         @lazyconstraint(cb, cut_expr >= 0.)
+            #         if -getvalue(cut_expr) > m.tol_prim_infeas
+            #             viol_cut = true
+            #         end
+            #     end
+            # end
         end
-
-        # Infeasible but couldn't add primal or dual cuts
-        return
     end
     addlazycallback(m.model_mip, callback_lazy)
 
@@ -1157,27 +1158,18 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
         # println("doing heuristic cb")
         if m.isnew_feas
             # println("adding new sol")
-            push!(cache_soln[m.best_int], m.best_cont)
-
             # Set MIP solution to the new best feasible solution
             set_best_soln!(m, cb, logs)
             addsolution(cb)
             m.isnew_feas = false
             m.best_obj = Inf
         end
-        return
     end
     addheuristiccallback(m.model_mip, callback_heur)
 
     # Add incumbent callback to tell MIP solver whether solutions are conic feasible incumbents or not
     function callback_incumbent(cb)
         # println("doing incumbent cb")
-        if getvalue(m.x_cont) in cache_soln[getvalue(m.x_int)]
-            # println("seen in lazy or heuristic: accepting")
-            CPLEX.acceptincumbent(cb)
-            return
-        end
-
         # If any SOC variables are SOC infeasible, return false
         for vars in m.vars_soc
             if (sumabs2(getvalue(vars[j]) for j in 2:length(vars)) - getvalue(vars[1])^2) > m.tol_prim_infeas
@@ -1190,7 +1182,6 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
         # No conic infeasibility: allow solution as new incumbent
         # println("checked feas: accepting")
         CPLEX.acceptincumbent(cb)
-        return
     end
     CPLEX.addincumbentcallback(m.model_mip, callback_incumbent)
 
@@ -1198,10 +1189,6 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
     logs[:mip_solve] = time()
     status_mip = solve(m.model_mip)#, suppress_warnings=true)
     logs[:mip_solve] = time() - logs[:mip_solve]
-
-    if (m.status == :ConicFailure) || (m.status == :MIPFailure)
-        return
-    end
 
     if (status_mip == :Infeasible) || (status_mip == :InfeasibleOrUnbounded)
         m.status = :Infeasible
