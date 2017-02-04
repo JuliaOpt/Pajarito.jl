@@ -1103,7 +1103,6 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
 
             vars = m.vars_soc[n]
             prim = getvalue(vars)
-            # vars_dagg = m.vars_dagg_soc[n]
 
             # Rescale
             if maxabs(prim) > m.tol_zero
@@ -1131,11 +1130,12 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
             if -getvalue(cut_expr) > m.tol_zero
                 @lazyconstraint(cb, cut_expr >= 0.)
                 # Should we finish after adding a violated cut? empirical question
-                return
+                # return
             end
 
             # # Disagg cuts, discard if primal variable j is small
             # # 2*dj >= 2xj`/y`*xj - (xj'/y`)^2*y
+            # vars_dagg = m.vars_dagg_soc[n]
             # for j in 2:length(prim)
             #     if prim[j] != 0.
             #         @expression(m.model_mip, cut_expr, (prim[j] / prim[1])^2 * vars[1] + 2. * vars_dagg[j-1] - (2 * prim[j] / prim[1]) * vars[j])
