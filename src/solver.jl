@@ -42,10 +42,13 @@ immutable PajaritoSolver <: MathProgBase.AbstractMathProgSolver
     prim_cuts_only::Bool        # (Conic only) Do not add dual cuts
     prim_cuts_always::Bool      # (Conic only) Add primal cuts at each iteration or in each lazy callback
     prim_cuts_assist::Bool      # (Conic only) Add primal cuts only when integer solutions are repeating
+    prim_viol_cuts_only::Bool   # (Conic only) Only add primal cuts that are violated (including individual disaggregated cuts)
+    prim_max_viol_only::Bool    # (Conic only) Only add primal cuts for the cone with largest absolute violation
+    prim_soc_disagg::Bool       # (Conic only) Use disaggregated primal cuts for SOCs
+    prim_sdp_eig::Bool          # (Conic only) Use eigenvector cuts for SDPs
 
     tol_zero::Float64           # (Conic only) Tolerance for setting small absolute values in duals to zeros
-    tol_prim_zero::Float64      # (Conic only) Tolerance level for zeros in cut adding functions (must be at least 1e-5)
-    tol_prim_infeas::Float64    # (Conic only) Tolerance level for cone outer infeasibilities
+    tol_prim_infeas::Float64    # (Conic only) Tolerance level for cone outer infeasibilities for primal cut adding functions (must be at least 1e-5)
     tol_sdp_eigvec::Float64     # (Conic SDP only) Tolerance for setting small values in SDP eigenvectors to zeros (for cut sanitation)
     tol_sdp_eigval::Float64     # (Conic SDP only) Tolerance for ignoring eigenvectors corresponding to small (positive) eigenvalues
 end
@@ -85,22 +88,25 @@ function PajaritoSolver(;
     prim_cuts_only = false,
     prim_cuts_always = false,
     prim_cuts_assist = true,
+    prim_viol_cuts_only = true,
+    prim_max_viol_only = false,
+    prim_soc_disagg = true,
+    prim_sdp_eig = true,
 
-    tol_zero = 1e-8,
-    tol_prim_zero = 1e-6,
+    tol_zero = 1e-10,
     tol_prim_infeas = 1e-6,
     tol_sdp_eigvec = 1e-2,
     tol_sdp_eigval = 1e-6
     )
 
-    PajaritoSolver(log_level, timeout, rel_gap, mip_solver_drives, mip_solver, mip_subopt_solver, mip_subopt_count, round_mip_sols, pass_mip_sols, cont_solver, solve_relax, dualize_relax, dualize_sub, soc_disagg, soc_in_mip, sdp_eig, sdp_soc, init_soc_one, init_soc_inf, init_exp, init_sdp_lin, init_sdp_soc, viol_cuts_only, proj_dual_infeas, proj_dual_feas, prim_cuts_only, prim_cuts_always, prim_cuts_assist, tol_zero, tol_prim_zero, tol_prim_infeas, tol_sdp_eigvec, tol_sdp_eigval)
+    PajaritoSolver(log_level, timeout, rel_gap, mip_solver_drives, mip_solver, mip_subopt_solver, mip_subopt_count, round_mip_sols, pass_mip_sols, cont_solver, solve_relax, dualize_relax, dualize_sub, soc_disagg, soc_in_mip, sdp_eig, sdp_soc, init_soc_one, init_soc_inf, init_exp, init_sdp_lin, init_sdp_soc, viol_cuts_only, proj_dual_infeas, proj_dual_feas, prim_cuts_only, prim_cuts_always, prim_cuts_assist, prim_viol_cuts_only, prim_max_viol_only, prim_soc_disagg, prim_sdp_eig, tol_zero, tol_prim_infeas, tol_sdp_eigvec, tol_sdp_eigval)
 end
 
 
 # Create Pajarito conic model: can solve with either conic algorithm or nonlinear algorithm wrapped with ConicNonlinearBridge
 function MathProgBase.ConicModel(s::PajaritoSolver)
     if applicable(MathProgBase.ConicModel, s.cont_solver)
-        return PajaritoConicModel(s.log_level, s.timeout, s.rel_gap, s.mip_solver_drives, s.mip_solver, s.mip_subopt_solver, s.mip_subopt_count, s.round_mip_sols, s.pass_mip_sols, s.cont_solver, s.solve_relax, s.dualize_relax, s.dualize_sub, s.soc_disagg, s.soc_in_mip, s.sdp_eig, s.sdp_soc, s.init_soc_one, s.init_soc_inf, s.init_exp, s.init_sdp_lin, s.init_sdp_soc, s.viol_cuts_only, s.proj_dual_infeas, s.proj_dual_feas, s.prim_cuts_only, s.prim_cuts_always, s.prim_cuts_assist, s.tol_zero, s.tol_prim_zero, s.tol_prim_infeas, s.tol_sdp_eigvec, s.tol_sdp_eigval)
+        return PajaritoConicModel(s.log_level, s.timeout, s.rel_gap, s.mip_solver_drives, s.mip_solver, s.mip_subopt_solver, s.mip_subopt_count, s.round_mip_sols, s.pass_mip_sols, s.cont_solver, s.solve_relax, s.dualize_relax, s.dualize_sub, s.soc_disagg, s.soc_in_mip, s.sdp_eig, s.sdp_soc, s.init_soc_one, s.init_soc_inf, s.init_exp, s.init_sdp_lin, s.init_sdp_soc, s.viol_cuts_only, s.proj_dual_infeas, s.proj_dual_feas, s.prim_cuts_only, s.prim_cuts_always, s.prim_cuts_assist, s.prim_viol_cuts_only, s.prim_max_viol_only, s.prim_soc_disagg, s.prim_sdp_eig, s.tol_zero, s.tol_prim_infeas, s.tol_sdp_eigvec, s.tol_sdp_eigval)
     # elseif applicable(MathProgBase.NonlinearModel, s.cont_solver)
     #     return MathProgBase.ConicModel(ConicNonlinearBridge.ConicNLPWrapper(nlp_solver=s))
     else
