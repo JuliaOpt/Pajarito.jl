@@ -60,9 +60,12 @@ type PajaritoConicModel <: MathProgBase.AbstractConicModel
     prim_cuts_only::Bool        # (Conic only) Do not add dual cuts
     prim_cuts_always::Bool      # (Conic only) Add primal cuts at each iteration or in each lazy callback
     prim_cuts_assist::Bool      # (Conic only) Add primal cuts only when integer solutions are repeating
-
+    prim_viol_cuts_only::Bool   # (Conic only) Only add primal cuts that are violated (including individual disaggregated cuts)
+    prim_max_viol_only::Bool    # (Conic only) Only add primal cuts for the cone with largest absolute violation
+    prim_soc_disagg::Bool       # (Conic only) Use disaggregated primal cuts for SOCs
+    prim_sdp_eig::Bool          # (Conic only) Use eigenvector cuts for SDPs
+    
     tol_zero::Float64           # (Conic only) Tolerance for setting small absolute values in duals to zeros
-    tol_prim_zero::Float64      # (Conic only) Tolerance level for zeros in primal cut adding functions (must be at least 1e-5)
     tol_prim_infeas::Float64    # (Conic only) Tolerance level for cone outer infeasibilities for primal cut adding functions (must be at least 1e-5)
     tol_sdp_eigvec::Float64     # (Conic SDP only) Tolerance for setting small values in SDP eigenvectors to zeros (for cut sanitation)
     tol_sdp_eigval::Float64     # (Conic SDP only) Tolerance for ignoring eigenvectors corresponding to small (positive) eigenvalues
@@ -120,7 +123,7 @@ type PajaritoConicModel <: MathProgBase.AbstractConicModel
     status::Symbol
 
     # Model constructor
-    function PajaritoConicModel(log_level, timeout, rel_gap, mip_solver_drives, mip_solver, mip_subopt_solver, mip_subopt_count, round_mip_sols, pass_mip_sols, cont_solver, solve_relax, dualize_relax, dualize_sub, soc_disagg, soc_in_mip, sdp_eig, sdp_soc, init_soc_one, init_soc_inf, init_exp, init_sdp_lin, init_sdp_soc, viol_cuts_only, proj_dual_infeas, proj_dual_feas, prim_cuts_only, prim_cuts_always, prim_cuts_assist, tol_zero, tol_prim_zero, tol_prim_infeas, tol_sdp_eigvec, tol_sdp_eigval)
+    function PajaritoConicModel(log_level, timeout, rel_gap, mip_solver_drives, mip_solver, mip_subopt_solver, mip_subopt_count, round_mip_sols, pass_mip_sols, cont_solver, solve_relax, dualize_relax, dualize_sub, soc_disagg, soc_in_mip, sdp_eig, sdp_soc, init_soc_one, init_soc_inf, init_exp, init_sdp_lin, init_sdp_soc, viol_cuts_only, proj_dual_infeas, proj_dual_feas, prim_cuts_only, prim_cuts_always, prim_cuts_assist, prim_viol_cuts_only, prim_max_viol_only, prim_soc_disagg, prim_sdp_eig, tol_zero, tol_prim_infeas, tol_sdp_eigvec, tol_sdp_eigval)
         # Errors
         if !mip_solver_drives
             error("This branch of Pajarito is only for the MSD algorithm\n")
@@ -147,7 +150,7 @@ type PajaritoConicModel <: MathProgBase.AbstractConicModel
                 warn("Not solving the conic continuous relaxation problem; Pajarito may return status :MIPFailure if the outer approximation MIP is unbounded\n")
             end
             warn("For the MIP-solver-driven algorithm, optimality tolerance must be specified as MIP solver option, not Pajarito option\n")
-            if (prim_cuts_only || prim_cuts_assist) && (tol_prim_zero < 1e-5)
+            if (prim_cuts_only || prim_cuts_assist)
                 warn("When using primal cuts, primal cut zero tolerance should be at least 1e-5 to avoid numerical issues\n")
             end
         end
@@ -180,7 +183,10 @@ type PajaritoConicModel <: MathProgBase.AbstractConicModel
         m.prim_cuts_only = prim_cuts_only
         m.prim_cuts_always = prim_cuts_always
         m.prim_cuts_assist = prim_cuts_assist
-        m.tol_prim_zero = tol_prim_zero
+        m.prim_viol_cuts_only = prim_viol_cuts_only
+        m.prim_max_viol_only = prim_max_viol_only
+        m.prim_soc_disagg = prim_soc_disagg
+        m.prim_sdp_eig = prim_sdp_eig
         m.tol_prim_infeas = tol_prim_infeas
         m.init_sdp_lin = init_sdp_lin
         m.init_sdp_soc = init_sdp_soc
@@ -1107,12 +1113,16 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
             return
         end
 
-        # prim_count = 0
-        # for n in 1:m.num_soc #randperm(m.num_soc)
-            # if !viol_cones[n]
-            #     continue
-            # end
-            n = maxviolcone
+        if m.prim_max_viol_only
+            cut_cones = maxviolcone:maxviolcone
+        else
+            cut_cones = 1:m.num_soc
+        end
+            
+        for n in cut_cones
+            if !viol_cones[n]
+                continue
+            end
 
             vars = m.vars_soc[n]
             prim = getvalue(vars)
@@ -1120,8 +1130,8 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
             # Rescale
             if maxabs(prim) > m.tol_zero
                 scale!(prim, (1. / maxabs(prim)))
-            # else
-            #     continue
+            else
+                continue
             end
 
             # Sanitize: remove near-zeros
@@ -1133,38 +1143,31 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
 
             # Discard if norm of non-epigraph variables is zero
             solnorm = vecnorm(prim[j] for j in 2:length(prim))
-            # if solnorm <= m.tol_zero
-            #     continue
-            # end
-
-            # Add full primal cut
-            # x`*x / ||x`|| <= y
-            @expression(m.model_mip, cut_expr, vars[1] - sum(prim[j] / solnorm * vars[j] for j in 2:length(prim)))
-            if -getvalue(cut_expr) > m.tol_zero
-                @lazyconstraint(cb, cut_expr >= 0.)
-                # Should we finish after adding a violated cut? empirical question
-                # return
-                # prim_count += 1
+            if solnorm <= m.tol_zero
+                continue
             end
 
-            # if prim_count > log(m.num_soc) + 1
-            #     return
-            # end
-
-            # Disagg cuts, discard if primal variable j is small
-            # 2*dj >= 2xj`/y`*xj - (xj'/y`)^2*y
-            # vars_dagg = m.vars_dagg_soc[n]
-            # for j in 2:length(prim)
-            #     if prim[j] != 0.
-            #         @expression(m.model_mip, cut_expr, (prim[j] / prim[1])^2 * vars[1] + 2. * vars_dagg[j-1] - (2 * prim[j] / prim[1]) * vars[j])
-            #         if -getvalue(cut_expr) > m.tol_zero
-            #             @lazyconstraint(cb, cut_expr >= 0.)
-            #             # Should we finish after adding a violated cut? empirical question
-            #             # return
-            #         end
-            #     end
-            # end
-        # end
+            if !m.prim_soc_disagg
+                # Add full primal cut
+                # x`*x / ||x`|| <= y
+                @expression(m.model_mip, cut_expr, vars[1] - sum(prim[j] / solnorm * vars[j] for j in 2:length(prim)))
+                if !m.prim_viol_cuts_only || (-getvalue(cut_expr) > m.tol_zero)
+                    @lazyconstraint(cb, cut_expr >= 0.)
+                end
+            else
+                # Disagg cuts, discard if primal variable j is small
+                # 2*dj >= 2xj`/y`*xj - (xj'/y`)^2*y
+                vars_dagg = m.vars_dagg_soc[n]
+                for j in 2:length(prim)
+                    if prim[j] != 0.
+                        @expression(m.model_mip, cut_expr, (prim[j] / prim[1])^2 * vars[1] + 2. * vars_dagg[j-1] - (2 * prim[j] / prim[1]) * vars[j])
+                        if !m.prim_viol_cuts_only || (-getvalue(cut_expr) > m.tol_zero)
+                            @lazyconstraint(cb, cut_expr >= 0.)
+                        end
+                    end
+                end
+            end
+        end
     end
     addlazycallback(m.model_mip, callback_lazy)
 
