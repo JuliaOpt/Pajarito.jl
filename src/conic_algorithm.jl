@@ -1045,7 +1045,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
         # Get integer solution, check if new
         viol_cut = false
         soln_int = getvalue(m.x_int)
-        if !(soln_int in cache_cuts)
+        if !haskey(cache_cuts, soln_int)
             # Solve conic subproblem and save dual in dict (empty if conic failure)
             (status_conic, dual_conic) = solve_conicsub!(m, soln_int, logs)
 
