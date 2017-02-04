@@ -1017,7 +1017,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
         setsolver(m.model_mip, m.mip_solver)
     end
 
-    cache = Set{Vector{Float64}}()
+    cache_cuts = Dict{Vector{Float64},Set{JuMP.AffExpr}}()
     viol_cones = trues(m.num_soc)
 
     # Add lazy cuts callback to add dual and primal conic cuts
@@ -1043,18 +1043,17 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
         end
 
         # Get integer solution, check if new
+        viol_cut = false
         soln_int = getvalue(m.x_int)
-        if !(soln_int in cache)
+        if !(soln_int in cache_cuts)
             # Solve conic subproblem and save dual in dict (empty if conic failure)
             (status_conic, dual_conic) = solve_conicsub!(m, soln_int, logs)
-            push!(cache, soln_int)
+
+            cuts = Set{JuMP.AffExpr}()
+            cache_cuts[copy(soln_int)] = cuts
 
             if (status_conic == :Optimal) || (status_conic == :Suboptimal) || (status_conic == :Infeasible)
                 for n in 1:m.num_soc
-                    if !viol_cones[n]
-                        continue
-                    end
-
                     dual = dual_conic[m.rows_sub_soc[n]]
                     vars = m.vars_soc[n]
                     vars_dagg = m.vars_dagg_soc[n]
@@ -1083,6 +1082,9 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
                             @expression(m.model_mip, cut_expr, (dual[j] / dual[1])^2 * vars[1] + 2. * vars_dagg[j-1] + (2 * dual[j] / dual[1]) * vars[j])
                             if -getvalue(cut_expr) > m.tol_zero
                                 @lazyconstraint(cb, cut_expr >= 0.)
+                                viol_cut = true
+                            else
+                                push!(cuts, cut_expr)
                             end
                         end
                     end
@@ -1092,17 +1094,21 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
         else
             logs[:n_repeat] += 1
 
-            # # Re-add dual cuts until one is infeasible
-            # for cut_expr in shuffle!(cache_cuts[soln_int])
-            #     if -getvalue(cut_expr) > m.tol_prim_infeas
-            #         @lazyconstraint(cb, cut_expr >= 0.)
-            #         return
-            #     end
-            # end
+            # Add infeasible dual cuts
+            for cut_expr in cache_cuts[soln_int]
+                if -getvalue(cut_expr) > m.tol_prim_infeas
+                    @lazyconstraint(cb, cut_expr >= 0.)
+                    viol_cut = true
+                end
+            end
         end
 
-        prim_count = 0
-        for n in randperm(m.num_soc)
+        if viol_cut
+            return
+        end
+
+        # prim_count = 0
+        for n in 1:m.num_soc #randperm(m.num_soc)
             if !viol_cones[n]
                 continue
             end
@@ -1138,12 +1144,12 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
                 @lazyconstraint(cb, cut_expr >= 0.)
                 # Should we finish after adding a violated cut? empirical question
                 # return
-                prim_count += 1
+                # prim_count += 1
             end
 
-            if prim_count > m.num_soc / 10.
-                return
-            end
+            # if prim_count > log(m.num_soc) + 1
+            #     return
+            # end
 
             # Disagg cuts, discard if primal variable j is small
             # 2*dj >= 2xj`/y`*xj - (xj'/y`)^2*y
@@ -1158,7 +1164,6 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
             #         end
             #     end
             # end
-
         end
     end
     addlazycallback(m.model_mip, callback_lazy)
