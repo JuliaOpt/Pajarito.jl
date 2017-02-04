@@ -1038,7 +1038,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
                 end
             end
         end
-        if maxviol > 0.
+        if maxviolcone == 0
             return
         end
 
@@ -1101,11 +1101,11 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
             # end
         end
 
-        for n in randperm(m.num_soc)
-            if !viol_cones[n]
-                continue
-            end
-            # n = maxviolcone
+        # for n in randperm(m.num_soc)
+        #     if !viol_cones[n]
+        #         continue
+        #     end
+            n = maxviolcone
 
             vars = m.vars_soc[n]
             prim = getvalue(vars)
@@ -1113,8 +1113,8 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
             # Rescale
             if maxabs(prim) > m.tol_zero
                 scale!(prim, (1. / maxabs(prim)))
-            else
-                continue
+            # else
+            #     continue
             end
 
             # Sanitize: remove near-zeros
@@ -1126,9 +1126,9 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
 
             # Discard if norm of non-epigraph variables is zero
             solnorm = vecnorm(prim[j] for j in 2:length(prim))
-            if solnorm <= m.tol_zero
-                continue
-            end
+            # if solnorm <= m.tol_zero
+            #     continue
+            # end
 
             # Add full primal cut
             # x`*x / ||x`|| <= y
@@ -1136,7 +1136,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
             if -getvalue(cut_expr) > m.tol_zero
                 @lazyconstraint(cb, cut_expr >= 0.)
                 # Should we finish after adding a violated cut? empirical question
-                # return
+                return
             end
 
             # # Disagg cuts, discard if primal variable j is small
@@ -1152,7 +1152,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
             #         end
             #     end
             # end
-        end
+        # end
     end
     addlazycallback(m.model_mip, callback_lazy)
 
