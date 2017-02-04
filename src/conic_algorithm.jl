@@ -1113,21 +1113,21 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
             end
 
             # Sanitize: remove near-zeros
-            for ind in 1:dim
+            for ind in 1:length(prim)
                 if abs(prim[ind]) < m.tol_zero
                     prim[ind] = 0.
                 end
             end
 
             # Discard if norm of non-epigraph variables is zero
-            solnorm = vecnorm(prim[j] for j in 2:dim)
+            solnorm = vecnorm(prim[j] for j in 2:length(prim))
             if solnorm <= m.tol_zero
                 continue
             end
 
             # Add full primal cut
             # x`*x / ||x`|| <= y
-            @expression(m.model_mip, cut_expr, vars[1] - sum(prim[j] / solnorm * vars[j] for j in 2:dim))
+            @expression(m.model_mip, cut_expr, vars[1] - sum(prim[j] / solnorm * vars[j] for j in 2:length(prim)))
             if -getvalue(cut_expr) > m.tol_zero
                 @lazyconstraint(m.cb_lazy, cut_expr >= 0.)
                 # Should we finish after adding a violated cut? empirical question
