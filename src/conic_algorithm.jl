@@ -1027,6 +1027,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
         is_feas = true
         fill!(viol_cones, false)
         maxviol = 0.
+        maxviolcone = 0
         for n in 1:m.num_soc
             vars = m.vars_soc[n]
             viol = sumabs2(getvalue(vars[j]) for j in 2:length(vars)) - getvalue(vars[1])^2
@@ -1106,7 +1107,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
         #     if !viol_cones[n]
         #         continue
         #     end
-
+        if maxviolcone > 0
             n = maxviolcone
 
             vars = m.vars_soc[n]
@@ -1154,7 +1155,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
             #         end
             #     end
             # end
-        # end
+        end
     end
     addlazycallback(m.model_mip, callback_lazy)
 
