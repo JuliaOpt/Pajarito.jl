@@ -1082,16 +1082,15 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
                         continue
                     end
 
-                    # Add violated disagg dual cuts, discard if dual j is small
+                    # Add disagg dual cuts, discard if dual j is small
                     for j in 2:length(dual)
                         if dual[j] != 0.
                             @expression(m.model_mip, cut_expr, (dual[j] / dual[1])^2 * vars[1] + 2. * vars_dagg[j-1] + (2 * dual[j] / dual[1]) * vars[j])
-                            if -getvalue(cut_expr) > m.tol_zero
+                            if !m.viol_cuts_only || (-getvalue(cut_expr) > m.tol_zero)
                                 @lazyconstraint(cb, cut_expr >= 0.)
                                 viol_cut = true
-                            else
-                                push!(cuts, cut_expr)
                             end
+                            push!(cuts, cut_expr)
                         end
                     end
                 end
