@@ -1101,6 +1101,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
             # end
         end
 
+        prim_count = 0
         for n in randperm(m.num_soc)
             if !viol_cones[n]
                 continue
@@ -1136,6 +1137,11 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
             if -getvalue(cut_expr) > m.tol_zero
                 @lazyconstraint(cb, cut_expr >= 0.)
                 # Should we finish after adding a violated cut? empirical question
+                # return
+                prim_count += 1
+            end
+
+            if prim_count > m.num_soc / 10.
                 return
             end
 
@@ -1152,6 +1158,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
             #         end
             #     end
             # end
+
         end
     end
     addlazycallback(m.model_mip, callback_lazy)
