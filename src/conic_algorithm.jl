@@ -125,9 +125,6 @@ type PajaritoConicModel <: MathProgBase.AbstractConicModel
         if !mip_solver_drives
             error("This branch of Pajarito is only for the MSD algorithm\n")
         end
-        if !viol_cuts_only
-            error("This branch of Pajarito requires viol cuts only\n")
-        end
         if !isa(mip_solver, CPLEX.CplexSolver)
             error("This branch of Pajarito requires CplexSolver as the MIP solver\n")
         end
@@ -141,7 +138,7 @@ type PajaritoConicModel <: MathProgBase.AbstractConicModel
             error("This branch of Pajarito requires primal cuts assist\n")
         end
         if prim_cuts_only || prim_cuts_always
-            error("This branch of Pajarito requires primal cuts only or always\n")
+            error("This branch of Pajarito cannot do primal cuts only or always\n")
         end
 
         # Warnings
