@@ -1142,7 +1142,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
                     if -getvalue(cut_expr) > m.tol_zero
                         @lazyconstraint(cb, cut_expr >= 0.)
                         # Should we finish after adding a violated cut? empirical question
-                        # return
+                        return
                     end
                 end
             end
