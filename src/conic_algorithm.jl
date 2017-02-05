@@ -1023,7 +1023,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
         setsolver(m.model_mip, m.mip_solver)
     end
 
-    cache_cuts = Dict{Vector{Float64},Set{JuMP.AffExpr}}()
+    cache_cuts = Dict{Vector{Float64},Vector{JuMP.AffExpr}}()
     viol_cones = trues(m.num_soc)
 
     # Add lazy cuts callback to add dual and primal conic cuts
@@ -1055,7 +1055,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
             # Solve conic subproblem and save dual in dict (empty if conic failure)
             (status_conic, dual_conic) = solve_conicsub!(m, soln_int, logs)
 
-            cuts = Set{JuMP.AffExpr}()
+            cuts = Vector{JuMP.AffExpr}(m.num_soc)
             cache_cuts[copy(soln_int)] = cuts
 
             if (status_conic == :Optimal) || (status_conic == :Suboptimal) || (status_conic == :Infeasible)
@@ -1082,27 +1082,45 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
                         continue
                     end
 
-                    # Add disagg dual cuts, discard if dual j is small
-                    for j in 2:length(dual)
-                        if dual[j] != 0.
-                            @expression(m.model_mip, cut_expr, (dual[j] / dual[1])^2 * vars[1] + 2. * vars_dagg[j-1] + (2 * dual[j] / dual[1]) * vars[j])
+                    @expression(m.model_mip, full_cut_expr, vecdot(dual, vars))
+                    cuts[n] = full_cut_expr
+
+                    # If cone is feasible, only add full cut, else add disagg cuts
+                    if !viol_cones[n]
+                        @lazyconstraint(cb, full_cut_expr >= 0)
+                    else
+                        # If any are poorly conditioned then add full cut also
+                        add_full = false
+                        for j in 2:length(dual)
+                            if (dual[j]) != 0.) && ((dual[j] / dual[1])^2 < 1e-10)
+                                add_full = true
+                                continue
+                            end
+
+                            # If option, only add violated disagg cuts
+                            @expression(m.model_mip, cut_expr, (dual[j] / dual[1])^2 * vars[1] + 2. * vars_dagg[j-1] + 2. * dual[j] / dual[1] * vars[j])
                             if !m.viol_cuts_only || (-getvalue(cut_expr) > m.tol_zero)
                                 @lazyconstraint(cb, cut_expr >= 0.)
                                 viol_cut = true
                             end
-                            push!(cuts, cut_expr)
+                        end
+
+                        if add_full
+                            @lazyconstraint(cb, full_cut_expr >= 0.)
+                            if -getvalue(full_cut_expr) > m.tol_zero
+                                viol_cut = true
+                            end
                         end
                     end
                 end
-                return
             end
         else
             logs[:n_repeat] += 1
 
-            # Add infeasible dual cuts
-            for cut_expr in cache_cuts[soln_int]
-                if -getvalue(cut_expr) > m.tol_prim_infeas
-                    @lazyconstraint(cb, cut_expr >= 0.)
+            # Add significantly infeasible dual cuts
+            for full_cut_expr in cache_cuts[soln_int]
+                if -getvalue(full_cut_expr) > m.tol_prim_infeas
+                    @lazyconstraint(cb, full_cut_expr >= 0.)
                     viol_cut = true
                 end
             end
@@ -1123,33 +1141,20 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
                 continue
             end
 
+            # Remove near-zeros, discard if norm of non-epigraph variables is small
             vars = m.vars_soc[n]
             prim = getvalue(vars)
-
-            # Rescale
-            if maxabs(prim) > m.tol_zero
-                scale!(prim, (1. / maxabs(prim)))
-            else
-                continue
-            end
-
-            # Sanitize: remove near-zeros
             for ind in 1:length(prim)
                 if abs(prim[ind]) < m.tol_zero
                     prim[ind] = 0.
                 end
             end
 
-            # Discard if norm of non-epigraph variables is zero
-            solnorm = vecnorm(prim[j] for j in 2:length(prim))
-            if solnorm <= m.tol_zero
-                continue
-            end
-
             if !m.prim_soc_disagg
                 # Add full primal cut
                 # x`*x / ||x`|| <= y
-                @expression(m.model_mip, cut_expr, vars[1] - sum(prim[j] / solnorm * vars[j] for j in 2:length(prim)))
+                solnorm = vecnorm(prim[j] for j in 2:length(prim))
+                @expression(m.model_mip, cut_expr, vars[1] - sum(prim[j] * vars[j] / solnorm for j in 2:length(prim)))
                 if !m.prim_viol_cuts_only || (-getvalue(cut_expr) > m.tol_zero)
                     @lazyconstraint(cb, cut_expr >= 0.)
                 end
@@ -1158,7 +1163,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
                 # 2*dj >= 2xj`/y`*xj - (xj'/y`)^2*y
                 vars_dagg = m.vars_dagg_soc[n]
                 for j in 2:length(prim)
-                    if prim[j] != 0.
+                    if abs(prim[j]) > m.tol_zero
                         @expression(m.model_mip, cut_expr, (prim[j] / prim[1])^2 * vars[1] + 2. * vars_dagg[j-1] - (2 * prim[j] / prim[1]) * vars[j])
                         if !m.prim_viol_cuts_only || (-getvalue(cut_expr) > m.tol_zero)
                             @lazyconstraint(cb, cut_expr >= 0.)
