@@ -1061,15 +1061,13 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
             if (status_conic == :Optimal) || (status_conic == :Suboptimal) || (status_conic == :Infeasible)
                 for n in 1:m.num_soc
                     dual = dual_conic[m.rows_sub_soc[n]]
-                    vars = m.vars_soc[n]
-                    vars_dagg = m.vars_dagg_soc[n]
 
                     # Rescale by largest absolute value or discard if near zero, and sanitize
-                    if maxabs(dual) > m.tol_zero
-                        scale!(dual, (1. / maxabs(dual)))
-                    else
-                        continue
-                    end
+                    # if maxabs(dual) > m.tol_zero
+                    #     scale!(dual, (1. / maxabs(dual)))
+                    # else
+                    #     continue
+                    # end
                     for j in 1:length(dual)
                         if abs(dual[j]) < m.tol_zero
                             dual[j] = 0.
@@ -1081,6 +1079,9 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
                     if dual[1] <= m.tol_zero
                         continue
                     end
+
+                    vars = m.vars_soc[n]
+                    vars_dagg = m.vars_dagg_soc[n]
 
                     @expression(m.model_mip, full_cut_expr, vecdot(dual, vars))
                     cuts[n] = full_cut_expr
