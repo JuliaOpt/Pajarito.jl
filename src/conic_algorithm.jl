@@ -1062,12 +1062,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
                 for n in 1:m.num_soc
                     dual = dual_conic[m.rows_sub_soc[n]]
 
-                    # Rescale by largest absolute value or discard if near zero, and sanitize
-                    # if maxabs(dual) > m.tol_zero
-                    #     scale!(dual, (1. / maxabs(dual)))
-                    # else
-                    #     continue
-                    # end
+                    # Sanitize
                     for j in 1:length(dual)
                         if abs(dual[j]) < m.tol_zero
                             dual[j] = 0.
@@ -1083,12 +1078,12 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
                     vars = m.vars_soc[n]
                     vars_dagg = m.vars_dagg_soc[n]
 
-                    @expression(m.model_mip, full_cut_expr, vecdot(dual, vars))
+                    @expression(m.model_mip, full_cut_expr, vars[1] + sum(dual[j] / dual[1] * vars[j] for j in 2:length(dual)))
                     cuts[n] = full_cut_expr
 
                     # If cone is feasible, only add full cut, else add disagg cuts
                     if !viol_cones[n]
-                        @lazyconstraint(cb, full_cut_expr >= 0)
+                        @lazyconstraint(cb, vecdot(dual, vars) >= 0)
                     else
                         # If any are poorly conditioned then add full cut also
                         add_full = false
@@ -1099,6 +1094,8 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
                             if (dual[j] / dual[1])^2 < 1e-10
                                 add_full = true
                                 continue
+                            elseif (dual[j] / dual[1])^2 < m.tol_zero
+                                add_full = true
                             end
 
                             # If option, only add violated disagg cuts
