@@ -94,7 +94,7 @@ function PajaritoSolver(;
     prim_sdp_eig = true,
 
     tol_zero = 1e-8,
-    tol_prim_infeas = 1e-5,
+    tol_prim_infeas = 1e-6,
     tol_sdp_eigvec = 1e-2,
     tol_sdp_eigval = 1e-4
     )
