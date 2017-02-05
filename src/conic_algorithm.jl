@@ -150,9 +150,6 @@ type PajaritoConicModel <: MathProgBase.AbstractConicModel
                 warn("Not solving the conic continuous relaxation problem; Pajarito may return status :MIPFailure if the outer approximation MIP is unbounded\n")
             end
             warn("For the MIP-solver-driven algorithm, optimality tolerance must be specified as MIP solver option, not Pajarito option\n")
-            if (prim_cuts_only || prim_cuts_assist)
-                warn("When using primal cuts, primal cut zero tolerance should be at least 1e-5 to avoid numerical issues\n")
-            end
         end
 
         # Initialize model
@@ -172,6 +169,8 @@ type PajaritoConicModel <: MathProgBase.AbstractConicModel
         m.init_soc_one = init_soc_one
         m.init_soc_inf = init_soc_inf
         m.init_exp = init_exp
+        m.init_sdp_lin = init_sdp_lin
+        m.init_sdp_soc = init_sdp_soc
         m.proj_dual_infeas = proj_dual_infeas
         m.proj_dual_feas = proj_dual_feas
         m.viol_cuts_only = viol_cuts_only
@@ -188,8 +187,6 @@ type PajaritoConicModel <: MathProgBase.AbstractConicModel
         m.prim_soc_disagg = prim_soc_disagg
         m.prim_sdp_eig = prim_sdp_eig
         m.tol_prim_infeas = tol_prim_infeas
-        m.init_sdp_lin = init_sdp_lin
-        m.init_sdp_soc = init_sdp_soc
         m.sdp_eig = sdp_eig
         m.sdp_soc = sdp_soc
         m.tol_sdp_eigvec = tol_sdp_eigvec
@@ -1055,23 +1052,25 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
             # Solve conic subproblem and save dual in dict (empty if conic failure)
             (status_conic, dual_conic) = solve_conicsub!(m, soln_int, logs)
 
-            cuts = Vector{JuMP.AffExpr}(m.num_soc)
+            cuts = Vector{JuMP.AffExpr}()
             cache_cuts[copy(soln_int)] = cuts
 
             if (status_conic == :Optimal) || (status_conic == :Suboptimal) || (status_conic == :Infeasible)
+                cuts = Vector{JuMP.AffExpr}(m.num_soc)
+
                 for n in 1:m.num_soc
                     dual = dual_conic[m.rows_sub_soc[n]]
 
-                    # Sanitize
+                    # Sanitize, project
                     for j in 1:length(dual)
                         if abs(dual[j]) < m.tol_zero
                             dual[j] = 0.
                         end
                     end
-
-                    # Project dual, discard cut if epigraph variable is 0
                     dual[1] = vecnorm(dual[j] for j in 2:length(dual))
                     if dual[1] <= m.tol_zero
+                        @expression(m.model_mip, full_cut_expr, 0.)
+                        cuts[n] = full_cut_expr
                         continue
                     end
 
