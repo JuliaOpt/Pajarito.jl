@@ -93,10 +93,10 @@ function PajaritoSolver(;
     prim_soc_disagg = true,
     prim_sdp_eig = true,
 
-    tol_zero = 1e-10,
-    tol_prim_infeas = 1e-6,
+    tol_zero = 1e-7,
+    tol_prim_infeas = 1e-5,
     tol_sdp_eigvec = 1e-2,
-    tol_sdp_eigval = 1e-6
+    tol_sdp_eigval = 1e-4
     )
 
     PajaritoSolver(log_level, timeout, rel_gap, mip_solver_drives, mip_solver, mip_subopt_solver, mip_subopt_count, round_mip_sols, pass_mip_sols, cont_solver, solve_relax, dualize_relax, dualize_sub, soc_disagg, soc_in_mip, sdp_eig, sdp_soc, init_soc_one, init_soc_inf, init_exp, init_sdp_lin, init_sdp_soc, viol_cuts_only, proj_dual_infeas, proj_dual_feas, prim_cuts_only, prim_cuts_always, prim_cuts_assist, prim_viol_cuts_only, prim_max_viol_only, prim_soc_disagg, prim_sdp_eig, tol_zero, tol_prim_infeas, tol_sdp_eigvec, tol_sdp_eigval)

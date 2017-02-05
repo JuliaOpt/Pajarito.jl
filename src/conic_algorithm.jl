@@ -64,7 +64,7 @@ type PajaritoConicModel <: MathProgBase.AbstractConicModel
     prim_max_viol_only::Bool    # (Conic only) Only add primal cuts for the cone with largest absolute violation
     prim_soc_disagg::Bool       # (Conic only) Use disaggregated primal cuts for SOCs
     prim_sdp_eig::Bool          # (Conic only) Use eigenvector cuts for SDPs
-    
+
     tol_zero::Float64           # (Conic only) Tolerance for setting small absolute values in duals to zeros
     tol_prim_infeas::Float64    # (Conic only) Tolerance level for cone outer infeasibilities for primal cut adding functions (must be at least 1e-5)
     tol_sdp_eigvec::Float64     # (Conic SDP only) Tolerance for setting small values in SDP eigenvectors to zeros (for cut sanitation)
@@ -1035,7 +1035,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
         maxviolcone = 0
         for n in 1:m.num_soc
             vars = m.vars_soc[n]
-            viol = sumabs2(getvalue(vars[j]) for j in 2:length(vars)) - getvalue(vars[1])^2
+            viol = sqrt(sumabs2(getvalue(vars[j]) for j in 2:length(vars))) - getvalue(vars[1])
             if viol > m.tol_prim_infeas
                 viol_cones[n] = true
                 if viol > maxviol
@@ -1117,7 +1117,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
         else
             cut_cones = 1:m.num_soc
         end
-            
+
         for n in cut_cones
             if !viol_cones[n]
                 continue
@@ -1190,7 +1190,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
         # println("doing incumbent cb")
         # If any SOC variables are SOC infeasible, return false
         for vars in m.vars_soc
-            if (sumabs2(getvalue(vars[j]) for j in 2:length(vars)) - getvalue(vars[1])^2) > m.tol_prim_infeas
+            if (sqrt(sumabs2(getvalue(vars[j]) for j in 2:length(vars))) - getvalue(vars[1])) > m.tol_prim_infeas
                 # println("checked feas: rejecting")
                 CPLEX.rejectincumbent(cb)
                 return
