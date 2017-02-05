@@ -1092,7 +1092,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
                         # If any are poorly conditioned then add full cut also
                         add_full = false
                         for j in 2:length(dual)
-                            if (dual[j]) != 0.) && ((dual[j] / dual[1])^2 < 1e-10)
+                            if (dual[j] != 0.) && ((dual[j] / dual[1])^2 < 1e-10)
                                 add_full = true
                                 continue
                             end
