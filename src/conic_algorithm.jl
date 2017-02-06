@@ -1269,9 +1269,9 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
         # Add heuristic callback to give MIP solver feasible solutions from conic solves
         function callback_heur(cb)
             # If have a new best feasible solution since last heuristic solution added
-            # println("doing heuristic cb")
+            println("doing heuristic cb")
             if m.isnew_feas
-                # println("adding new sol")
+                println("adding new sol")
                 # Set MIP solution to the new best feasible solution
                 set_best_soln!(m, cb, logs)
                 addsolution(cb)
@@ -1291,7 +1291,9 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
         println("doing incumbent cb")
         # If any SOC variables are SOC infeasible, return false
         for vars in m.vars_soc
-            if (vecnorm(getvalue(vars[j]) for j in 2:length(vars)) - getvalue(vars[1])) > m.tol_prim_infeas
+            prim_inf = vecnorm(getvalue(vars[j]) for j in 2:length(vars))^2 - getvalue(vars[1])^2
+            @show prim_inf
+            if prim_inf > m.tol_prim_infeas
                 println("checked feas: rejecting")
                 CPLEX.rejectincumbent(cb)
                 return
