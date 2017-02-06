@@ -82,7 +82,7 @@ function PajaritoSolver(;
     init_sdp_lin = true,
     init_sdp_soc = false,
 
-    viol_cuts_only = false,
+    viol_cuts_only = true,
     proj_dual_infeas = true,
     proj_dual_feas = false,
     prim_cuts_only = false,
@@ -93,7 +93,7 @@ function PajaritoSolver(;
     prim_soc_disagg = true,
     prim_sdp_eig = true,
 
-    tol_zero = 1e-8,
+    tol_zero = 1e-10,
     tol_prim_infeas = 1e-6,
     tol_sdp_eigvec = 1e-2,
     tol_sdp_eigval = 1e-4

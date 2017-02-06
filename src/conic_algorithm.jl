@@ -134,9 +134,6 @@ type PajaritoConicModel <: MathProgBase.AbstractConicModel
         if soc_in_mip
             error("This branch of Pajarito cannot do SOC in MIP\n")
         end
-        if round_mip_sols
-            error("This branch of Pajarito cannot do MIP solution rounding\n")
-        end
         if !prim_cuts_assist
             error("This branch of Pajarito requires primal cuts assist\n")
         end
@@ -376,33 +373,49 @@ function MathProgBase.optimize!(m::PajaritoConicModel)
             dual_conic = MathProgBase.getdual(model_relax)
             for n in 1:m.num_soc
                 dual = dual_conic[rows_relax_soc[n]]
-                vars = m.vars_soc[n]
-                vars_dagg = m.vars_dagg_soc[n]
+                dim = length(dual)
 
-                # Rescale by largest absolute value or discard if near zero, and sanitize
-                if maxabs(dual) > m.tol_zero
-                    scale!(dual, (1. / maxabs(dual)))
-                else
-                    continue
-                end
-                for j in 1:length(dual)
+                # Sanitize and discard if all values are small, project dual, discard cut if epigraph variable is tiny
+                keep = false
+                for j in 2:dim
                     if abs(dual[j]) < m.tol_zero
                         dual[j] = 0.
+                    else
+                        keep = true
                     end
                 end
-
-                # Project dual, discard cut if epigraph variable is 0
-                dual[1] = vecnorm(dual[j] for j in 2:length(dual))
-                if dual[1] <= m.tol_zero
+                dual[1] = vecnorm(dual[j] for j in 2:dim)
+                if !keep || (dual[1] <= m.tol_zero)
                     continue
                 end
 
-                # Add all disagg dual cuts, discard if dual j is small
-                for j in 2:length(dual)
-                    if dual[j] != 0.
-                        @expression(m.model_mip, cut_expr, (dual[j] / dual[1])^2 * vars[1] + 2. * vars_dagg[j-1] + (2 * dual[j] / dual[1]) * vars[j])
-                        @constraint(m.model_mip, cut_expr >= 0.)
+                # Rescale by 1/norm if option
+                if m.scale_dual_cuts
+                    scale!(dual, 1./dual[1])
+                end
+
+                add_full = false
+                # Add disaggregated dual cuts
+                for j in 2:dim
+                    if dual[j] == 0.
+                        # Zero cut
+                        continue
+                    elseif (dim - 1) * (dual[j]^2 / (2. * dual[1]) < m.tol_zero
+                        # Coefficient is too small
+                        add_full = true
+                        continue
+                    elseif (dual[j] / dual[1])^2 < 1e-5
+                        # Cut is poorly conditioned, add it but also add full cut
+                        add_full = true
                     end
+
+                    # Add disaggregated cut
+                    @constraint(m.model_mip, (dim - 1) * (dual[j]^2 / (2. * dual[1]) * vars[1] + dual[1] * vars_dagg[j-1] + dual[j] * vars[j]) >= 0.)
+                end
+
+                # Add full cut if any cuts were poorly conditioned
+                if add_full
+                    @constraint(m.model_mip, vecdot(dual, vars) >= 0.)
                 end
             end
         end
@@ -935,7 +948,7 @@ function create_mip_data!(m::PajaritoConicModel, c_new::Vector{Float64}, A_new::
 
         # Add disaggregated SOC constraint
         # x >= sum(2*d_j)
-        @constraint(model_mip, vars[1] >= 2. * sum(vars_dagg))
+        @constraint(model_mip, 2. * vars[1] >= 4. * sum(vars_dagg))
 
         # Set names
         for j in 1:(len - 1)
@@ -949,8 +962,8 @@ function create_mip_data!(m::PajaritoConicModel, c_new::Vector{Float64}, A_new::
             # for all j, implies x*sqrt(len - 1) >= sum(|y_j|)
             # linearize y_j^2/x at x = 1, y_j = 1/sqrt(len - 1) for all j
             for j in 2:len
-              @constraint(model_mip, 2. * vars_dagg[j-1] >=  2. / sqrt(len - 1) * vars[j] - 1. / (len - 1) * vars[1])
-              @constraint(model_mip, 2. * vars_dagg[j-1] >= -2. / sqrt(len - 1) * vars[j] - 1. / (len - 1) * vars[1])
+              @constraint(model_mip, 2. * (len - 1) * vars_dagg[j-1] - 2. * sqrt(len - 1) * vars[j] + vars[1] >= 0)
+              @constraint(model_mip, 2. * (len - 1) * vars_dagg[j-1] + 2. * sqrt(len - 1) * vars[j] + vars[1] >= 0)
             end
         end
         if m.init_soc_inf
@@ -960,8 +973,8 @@ function create_mip_data!(m::PajaritoConicModel, c_new::Vector{Float64}, A_new::
             # linearize y_j^2/x at x = 1, y_j = 1 for each j (y_k = 0 for k != j)
             # equivalent to standard 3-dim rotated SOC linearizations x + d_j >= 2|y_j|
             for j in 2:len
-              @constraint(model_mip, 2. * vars_dagg[j-1] >=  2. * vars[j] - vars[1])
-              @constraint(model_mip, 2. * vars_dagg[j-1] >= -2. * vars[j] - vars[1])
+              @constraint(model_mip, (len - 1) * (2. * vars_dagg[j-1] - 2. * vars[j] + vars[1]) >= 0)
+              @constraint(model_mip, (len - 1) * (2. * vars_dagg[j-1] + 2. * vars[j] + vars[1]) >= 0)
             end
         end
     end
@@ -1032,7 +1045,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
         maxviolcone = 0
         for n in 1:m.num_soc
             vars = m.vars_soc[n]
-            viol = sqrt(sumabs2(getvalue(vars[j]) for j in 2:length(vars))) - getvalue(vars[1])
+            viol = vecnorm(getvalue(vars[j]) for j in 2:length(vars)) - getvalue(vars[1])
             if viol > m.tol_prim_infeas
                 viol_cones[n] = true
                 if viol > maxviol
@@ -1045,95 +1058,119 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
             return
         end
 
-        # Get integer solution, check if new
+        # Get integer solution, round if option
         viol_cut = false
         soln_int = getvalue(m.x_int)
-        if !haskey(cache_cuts, soln_int)
-            # Solve conic subproblem and save dual in dict (empty if conic failure)
-            (status_conic, dual_conic) = solve_conicsub!(m, soln_int, logs)
+        if m.round_mip_sols
+            soln_int = map!(round, soln_int)
+        end
 
+        # Add new dual cuts if new solution, else add existing dual cuts
+        if !haskey(cache_cuts, soln_int)
+            # New integer solution
             cuts = Vector{JuMP.AffExpr}()
             cache_cuts[copy(soln_int)] = cuts
+
+            # Solve conic subproblem and save dual in dict (empty if conic failure)
+            (status_conic, dual_conic) = solve_conicsub!(m, soln_int, logs)
 
             if (status_conic == :Optimal) || (status_conic == :Suboptimal) || (status_conic == :Infeasible)
                 cuts = Vector{JuMP.AffExpr}(m.num_soc)
 
                 for n in 1:m.num_soc
                     dual = dual_conic[m.rows_sub_soc[n]]
+                    dim = length(dual)
 
-                    # Sanitize, project
-                    for j in 1:length(dual)
+                    # Sanitize and discard if all values are small, project dual, discard cut if epigraph variable is tiny
+                    keep = false
+                    for j in 2:dim
                         if abs(dual[j]) < m.tol_zero
                             dual[j] = 0.
+                        else
+                            keep = true
                         end
                     end
-                    dual[1] = vecnorm(dual[j] for j in 2:length(dual))
-                    if dual[1] <= m.tol_zero
-                        @expression(m.model_mip, full_cut_expr, 0.)
-                        cuts[n] = full_cut_expr
+                    dual[1] = vecnorm(dual[j] for j in 2:dim)
+                    if !keep || (dual[1] <= m.tol_zero)
+                        cuts[n] = JuMP.AffExpr(0)
                         continue
                     end
 
-                    vars = m.vars_soc[n]
-                    vars_dagg = m.vars_dagg_soc[n]
+                    # Rescale by 1/norm if option
+                    if m.scale_dual_cuts
+                        scale!(dual, 1./dual[1])
+                    end
 
-                    @expression(m.model_mip, full_cut_expr, vars[1] + sum(dual[j] / dual[1] * vars[j] for j in 2:length(dual)))
-                    cuts[n] = full_cut_expr
-
-                    # If cone is feasible, only add full cut, else add disagg cuts
-                    if !viol_cones[n]
-                        @lazyconstraint(cb, vecdot(dual, vars) >= 0)
-                    else
-                        # If any are poorly conditioned then add full cut also
-                        add_full = false
-                        for j in 2:length(dual)
-                            if dual[j] == 0.
-                                continue
-                            end
-                            if (dual[j] / dual[1])^2 < 1e-10
-                                add_full = true
-                                continue
-                            elseif (dual[j] / dual[1])^2 < m.tol_zero
-                                add_full = true
-                            end
-
-                            # If option, only add violated disagg cuts
-                            @expression(m.model_mip, cut_expr, (dual[j] / dual[1])^2 * vars[1] + 2. * vars_dagg[j-1] + 2. * dual[j] / dual[1] * vars[j])
-                            if !m.viol_cuts_only || (-getvalue(cut_expr) > m.tol_zero)
-                                @lazyconstraint(cb, cut_expr >= 0.)
-                                viol_cut = true
-                            end
+                    add_full = false
+                    # Add disaggregated dual cuts
+                    for j in 2:dim
+                        if dual[j] == 0.
+                            # Zero cut
+                            continue
+                        elseif (dim - 1) * (dual[j]^2 / (2. * dual[1]) < m.tol_zero
+                            # Coefficient is too small
+                            add_full = true
+                            continue
+                        elseif (dual[j] / dual[1])^2 < 1e-5
+                            # Cut is poorly conditioned, add it but also add full cut
+                            add_full = true
                         end
 
-                        if add_full
-                            @lazyconstraint(cb, full_cut_expr >= 0.)
-                            if -getvalue(full_cut_expr) > m.tol_zero
-                                viol_cut = true
-                            end
+                        # Add disaggregated cut (optionally if violated)
+                        @expression(m.model_mip, cut_expr, (dim - 1) * (dual[j]^2 / (2. * dual[1]) * vars[1] + dual[1] * vars_dagg[j-1] + dual[j] * vars[j]))
+                        if -getvalue(cut_expr) > m.tol_prim_infeas
+                            viol_cut = true
+                            @lazyconstraint(cb, cut_expr >= 0.)
+                        elseif !m.viol_cuts_only
+                            @lazyconstraint(cb, cut_expr >= 0.)
+                        end
+                    end
+
+                    @expression(m.model_mip, cut_expr, vecdot(dual, vars))
+                    cuts[n] = cut_expr
+                    # Add full cut if any cuts were poorly conditioned
+                    if add_full
+                        if -getvalue(cut_expr) > m.tol_prim_infeas
+                            viol_cut = true
+                            @lazyconstraint(cb, cut_expr >= 0.)
+                        elseif !m.viol_cuts_only
+                            @lazyconstraint(cb, cut_expr >= 0.)
                         end
                     end
                 end
             end
         else
+            # Repeat integer solution: get dual cuts if they exist
             logs[:n_repeat] += 1
+            cuts = cache_cuts[soln_int]
+            if !isempty(cuts)
+                # Add infeasible full dual cut for each infeasible cone
+                for n in 1:num_soc
+                    if !viol_cones[n]
+                        continue
+                    end
 
-            # Add significantly infeasible dual cuts
-            for full_cut_expr in cache_cuts[soln_int]
-                if -getvalue(full_cut_expr) > m.tol_prim_infeas
-                    @lazyconstraint(cb, full_cut_expr >= 0.)
-                    viol_cut = true
+                    cut_expr = cuts[n]
+                    if -getvalue(cut_expr) > m.tol_prim_infeas
+                        viol_cut = true
+                        @lazyconstraint(cb, cut_expr >= 0.)
+                    end
                 end
             end
         end
 
+        # Finish lazy callback if added a violated dual cut already
         if viol_cut
             return
         end
 
+        # Add primal cuts on infeasible cones
         if m.prim_max_viol_only
-            cut_cones = maxviolcone:maxviolcone
+            # Most violated cone only
+            cut_cones = [maxviolcone]
         else
-            cut_cones = 1:m.num_soc
+            # All infeasible cones
+            cut_cones = shuffle(1:m.num_soc)
         end
 
         for n in cut_cones
@@ -1141,61 +1178,87 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
                 continue
             end
 
-            # Remove near-zeros, discard if norm of non-epigraph variables is small
             vars = m.vars_soc[n]
             prim = getvalue(vars)
-            for ind in 1:length(prim)
-                if abs(prim[ind]) < m.tol_zero
-                    prim[ind] = 0.
+            dim = length(vars)
+
+            # Remove near-zeros, discard if all values are small
+            keep = false
+            for j in 1:dim
+                if abs(prim[j]) < m.tol_zero
+                    prim[j] = 0.
+                else
+                    keep = true
+                end
+            end
+            if !keep
+                continue
+            end
+
+            xnorm = vecnorm(prim[j] for j in 2:dim)
+            add_full = false
+
+            # Add primal disagg cuts
+            if m.prim_soc_disagg
+                vars_dagg = m.vars_dagg_soc[n]
+                for j in 2:dim
+                    if prim[j] == 0.
+                        # Zero cut
+                        continue
+                    elseif (dim - 1) * (prim[j] / xnorm)^2 / 2. < m.tol_zero
+                        # Coefficient is too small
+                        add_full = true
+                        continue
+                    elseif (prim[j] / xnorm)^2 < 1e-5
+                        # Cut is poorly conditioned, add it but also add full cut
+                        add_full = true
+                    end
+
+                    # Disagg cut
+                    # 2*dj >= 2xj'/||x'||*xj - (xj'/||x'||)^2*y
+                    @expression(m.model_mip, cut_expr, (dim - 1) * ((prim[j] / xnorm)^2 / 2. * vars[1] + vars_dagg[j-1] - prim[j] / xnorm * vars[j]))
+                    if !m.prim_viol_cuts_only || (-getvalue(cut_expr) > m.tol_prim_infeas)
+                        @lazyconstraint(cb, cut_expr >= 0.)
+                    end
                 end
             end
 
-            if !m.prim_soc_disagg
-                # Add full primal cut
-                # x`*x / ||x`|| <= y
-                solnorm = vecnorm(prim[j] for j in 2:length(prim))
-                @expression(m.model_mip, cut_expr, vars[1] - sum(prim[j] * vars[j] / solnorm for j in 2:length(prim)))
-                if !m.prim_viol_cuts_only || (-getvalue(cut_expr) > m.tol_zero)
+            # Add primal full cut
+            if add_full || !m.prim_soc_disagg
+                # Full primal cut
+                # x'*x / ||x'|| <= y
+                @expression(m.model_mip, cut_expr, vars[1] - sum(prim[j] / xnorm * vars[j] for j in 2:dim))
+                if !m.prim_viol_cuts_only || (-getvalue(cut_expr) > m.tol_prim_infeas)
                     @lazyconstraint(cb, cut_expr >= 0.)
-                end
-            else
-                # Disagg cuts, discard if primal variable j is small
-                # 2*dj >= 2xj`/y`*xj - (xj'/y`)^2*y
-                vars_dagg = m.vars_dagg_soc[n]
-                for j in 2:length(prim)
-                    if abs(prim[j]) > m.tol_zero
-                        @expression(m.model_mip, cut_expr, (prim[j] / prim[1])^2 * vars[1] + 2. * vars_dagg[j-1] - (2 * prim[j] / prim[1]) * vars[j])
-                        if !m.prim_viol_cuts_only || (-getvalue(cut_expr) > m.tol_zero)
-                            @lazyconstraint(cb, cut_expr >= 0.)
-                        end
-                    end
                 end
             end
         end
     end
     addlazycallback(m.model_mip, callback_lazy)
 
-    # Add heuristic callback to give MIP solver feasible solutions from conic solves
-    function callback_heur(cb)
-        # If have a new best feasible solution since last heuristic solution added
-        # println("doing heuristic cb")
-        if m.isnew_feas
-            # println("adding new sol")
-            # Set MIP solution to the new best feasible solution
-            set_best_soln!(m, cb, logs)
-            addsolution(cb)
-            m.isnew_feas = false
-            m.best_obj = Inf
+    if m.pass_mip_sols
+        # Add heuristic callback to give MIP solver feasible solutions from conic solves
+        function callback_heur(cb)
+            # If have a new best feasible solution since last heuristic solution added
+            # println("doing heuristic cb")
+            if m.isnew_feas
+                # println("adding new sol")
+                # Set MIP solution to the new best feasible solution
+                set_best_soln!(m, cb, logs)
+                addsolution(cb)
+                m.isnew_feas = false
+                m.best_obj = Inf
+            end
         end
+        addheuristiccallback(m.model_mip, callback_heur)
     end
-    addheuristiccallback(m.model_mip, callback_heur)
 
     # Add incumbent callback to tell MIP solver whether solutions are conic feasible incumbents or not
     function callback_incumbent(cb)
         # println("doing incumbent cb")
         # If any SOC variables are SOC infeasible, return false
         for vars in m.vars_soc
-            if (sqrt(sumabs2(getvalue(vars[j]) for j in 2:length(vars))) - getvalue(vars[1])) > m.tol_prim_infeas
+            if (vecnorm(getvalue(vars[j]) for j in 2:length(vars)) - getvalue(vars[1])) > m.tol_prim_infeas
                 # println("checked feas: rejecting")
                 CPLEX.rejectincumbent(cb)
                 return
