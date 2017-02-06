@@ -1082,7 +1082,8 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
 
             # Solve conic subproblem and save dual in dict (empty if conic failure)
             (status_conic, dual_conic, obj_conic) = solve_conicsub!(m, soln_int, logs)
-
+            println("conic status $status_conic")
+            
             if m.scale_dual_cuts && (status_conic == :Infeasible)
                 # Find rescaling factor for ray
                 ray_value = vecdot(dual_conic, m.b_sub_int)  # sum(vecdot([m.rows_sub_soc[n]], m.b_sub_int[m.rows_sub_soc[n]]) for n in 1:num_soc)
