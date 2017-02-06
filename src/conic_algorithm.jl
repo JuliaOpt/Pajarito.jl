@@ -1297,7 +1297,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
         println("doing incumbent cb")
         # If any SOC variables are SOC infeasible, return false
         for vars in m.vars_soc
-            prim_inf = vecnorm(getvalue(vars[j]) for j in 2:length(vars))^2 - getvalue(vars[1])^2
+            prim_inf = vecnorm(getvalue(vars[j]) for j in 2:length(vars)) - getvalue(vars[1])
             @show prim_inf
             if prim_inf > m.tol_prim_infeas
                 println("checked feas: rejecting")
