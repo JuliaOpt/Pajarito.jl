@@ -102,7 +102,7 @@ type PajaritoConicModel <: MathProgBase.AbstractConicModel
     summ_soc::Dict{Symbol,Real} # Data and infeasibilities
     dim_soc::Vector{Int}        # Dimensions
     rows_sub_soc::Vector{Vector{Int}} # Row indices in subproblem
-    vars_soc::Vector{Vector{JuMP.Variable}} # Slack variables (newly added or detected)
+    vars_soc::Vector{Vector{JuMP.AffExpr}} # Slack variables (newly added or detected)
     vars_dagg_soc::Vector{Vector{JuMP.Variable}} # Disaggregated variables
 
     # Miscellaneous for algorithms
@@ -993,7 +993,7 @@ function create_mip_data!(m::PajaritoConicModel, c_new::Vector{Float64}, A_new::
     rows_relax_soc = Vector{Vector{Int}}(num_soc)
     rows_sub_soc = Vector{Vector{Int}}(num_soc)
     dim_soc = Vector{Int}(num_soc)
-    vars_soc = Vector{Vector{JuMP.Variable}}(num_soc)
+    vars_soc = Vector{Vector{JuMP.AffExpr}}(num_soc)
     vars_dagg_soc = Vector{Vector{JuMP.Variable}}(num_soc)
 
     # Set up a SOC cone in the MIP
@@ -1005,12 +1005,13 @@ function create_mip_data!(m::PajaritoConicModel, c_new::Vector{Float64}, A_new::
         vars_dagg_soc[n_soc] = Vector{JuMP.Variable}(0)
 
         # Set bounds
-        setlowerbound(vars[1], 0.)
+        # setlowerbound(vars[1], 0.)
+        @constraint(model_mip, vars[1] >= 0)
 
         # Set names
-        for j in 1:len
-            setname(vars[j], "s$(j)_soc$(n_soc)")
-        end
+        # for j in 1:len
+        #     setname(vars[j], "s$(j)_soc$(n_soc)")
+        # end
 
         # Add disaggregated SOC variables
         # 2*d_j >= y_j^2/x
@@ -1062,14 +1063,13 @@ function create_mip_data!(m::PajaritoConicModel, c_new::Vector{Float64}, A_new::
         elseif spec == :Zero
             @constraint(model_mip, lhs_expr[rows] .== 0.)
         else
-            # Set up nonlinear cone slacks and data
-            vars = @variable(model_mip, [1:length(rows)])
-            @constraint(model_mip, lhs_expr[rows] - vars .== 0.)
+            # # Set up nonlinear cone slacks and data
+            # vars = @variable(model_mip, [1:length(rows)])
+            # @constraint(model_mip, lhs_expr[rows] - vars .== 0.)
 
-            # Set up MIP cones
             if spec == :SOC
                 n_soc += 1
-                add_soc!(n_soc, length(rows), rows, vars)
+                add_soc!(n_soc, length(rows), rows, lhs_expr[rows])
             else
                 error("Cone type $spec not valid for this branch of Pajarito\n")
             end
@@ -1483,7 +1483,7 @@ function set_best_soln!(m::PajaritoConicModel, cb, logs::Dict{Symbol,Real})
     set_soln!(m, cb, m.x_cont, m.best_cont)
 
     for n in 1:m.num_soc
-        set_soln!(m, cb, m.vars_soc[n], m.best_slck, m.rows_sub_soc[n])
+        # set_soln!(m, cb, m.vars_soc[n], m.best_slck, m.rows_sub_soc[n])
         set_dagg_soln!(m, cb, m.vars_dagg_soc[n], m.best_slck, m.rows_sub_soc[n])
     end
 end
