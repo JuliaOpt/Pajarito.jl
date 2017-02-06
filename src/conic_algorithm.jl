@@ -366,18 +366,26 @@ function MathProgBase.optimize!(m::PajaritoConicModel)
         elseif (status_relax != :Optimal) && (status_relax != :Suboptimal)
             warn("Apparent conic solver failure with status $status_relax\n")
         else
+            obj_relax = MathProgBase.getobjval(model_relax)
             if m.log_level >= 1
                 @printf " - Relaxation status    = %14s\n" status_relax
-                @printf " - Relaxation objective = %14.6f\n" MathProgBase.getobjval(model_relax)
+                @printf " - Relaxation objective = %14.6f\n" obj_relax
             end
 
             # Add initial dual cuts to MIP model
             dual_conic = MathProgBase.getdual(model_relax)
+
             for n in 1:m.num_soc
                 vars = m.vars_soc[n]
                 vars_dagg = m.vars_dagg_soc[n]
                 dual = dual_conic[rows_relax_soc[n]]
                 dim = length(dual)
+
+                # Optionally rescale dual cut
+                if m.scale_dual_cuts
+                    # Feasible dual: rescale cut by number of cones / absval of full conic objective
+                    scale!(dual, m.num_soc / (abs(obj_relax) + 1e-5))
+                end
 
                 # Sanitize and discard if all values are small, project dual, discard cut if epigraph variable is tiny
                 keep = false
@@ -391,11 +399,6 @@ function MathProgBase.optimize!(m::PajaritoConicModel)
                 dual[1] = vecnorm(dual[j] for j in 2:dim)
                 if !keep || (dual[1] <= m.tol_zero)
                     continue
-                end
-
-                # Rescale by 1/norm if option
-                if m.scale_dual_cuts
-                    scale!(dual, 1./dual[1])
                 end
 
                 add_full = false
@@ -1076,9 +1079,17 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
             cache_cuts[copy(soln_int)] = cuts
 
             # Solve conic subproblem and save dual in dict (empty if conic failure)
-            (status_conic, dual_conic) = solve_conicsub!(m, soln_int, logs)
+            (status_conic, dual_conic, obj_conic) = solve_conicsub!(m, soln_int, logs)
 
-            if (status_conic == :Optimal) || (status_conic == :Suboptimal) || (status_conic == :Infeasible)
+            if m.scale_dual_cuts && (status_conic == :Infeasible)
+                # Find rescaling factor for ray
+                ray_value = vecdot(dual_conic, m.b_sub_int)  # sum(vecdot([m.rows_sub_soc[n]], m.b_sub_int[m.rows_sub_soc[n]]) for n in 1:num_soc)
+                if conic_ray_value > -m.tol_zero
+                    error("Conic solver failure: b'y not sufficiently negative for infeasible ray y\n")
+                end
+            end
+
+            if (status_conic == :Optimal) || (status_conic == :Infeasible)
                 cuts = Vector{JuMP.AffExpr}(m.num_soc)
 
                 for n in 1:m.num_soc
@@ -1086,6 +1097,17 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
                     vars_dagg = m.vars_dagg_soc[n]
                     dual = dual_conic[m.rows_sub_soc[n]]
                     dim = length(dual)
+
+                    # Optionally rescale dual cut
+                    if m.scale_dual_cuts
+                        if status_conic == :Infeasible
+                            # Infeasible ray: rescale cut so that infeasible point will be cut off
+                            scale!(dual, m.num_soc / ray_value)
+                        else
+                            # Feasible dual: rescale cut by number of cones / absval of full conic objective
+                            scale!(dual, m.num_soc / (abs(obj_conic) + 1e-5))
+                        end
+                    end
 
                     # Sanitize and discard if all values are small, project dual, discard cut if epigraph variable is tiny
                     keep = false
@@ -1100,11 +1122,6 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
                     if !keep || (dual[1] <= m.tol_zero)
                         cuts[n] = JuMP.AffExpr(0)
                         continue
-                    end
-
-                    # Rescale by 1/norm if option
-                    if m.scale_dual_cuts
-                        scale!(dual, 1./dual[1])
                     end
 
                     add_full = false
@@ -1328,8 +1345,9 @@ function solve_conicsub!(m::PajaritoConicModel, soln_int::Vector{Float64}, logs:
     logs[:n_conic] += 1
 
     status_conic = MathProgBase.status(m.model_conic)
-    if (status_conic == :Optimal) || (status_conic == :Suboptimal) || (status_conic == :Infeasible)
-        # Get dual vector
+
+    # Get dual vector
+    if (status_conic == :Optimal) || (status_conic == :Infeasible)
         dual_conic = MathProgBase.getdual(m.model_conic)
     else
         dual_conic = Float64[]
@@ -1337,19 +1355,23 @@ function solve_conicsub!(m::PajaritoConicModel, soln_int::Vector{Float64}, logs:
 
     # Check if have new feasible solution
     if status_conic == :Optimal
-        soln_cont = MathProgBase.getsolution(m.model_conic)
         logs[:n_feas] += 1
 
+        # Calculate full objective value
+        soln_cont = MathProgBase.getsolution(m.model_conic)
+        obj_conic = dot(m.c_sub_int, soln_int) + dot(m.c_sub_cont, soln_cont)
+
         # Check if new full objective beats best incumbent
-        new_obj = dot(m.c_sub_int, soln_int) + dot(m.c_sub_cont, soln_cont)
-        if new_obj < m.best_obj
+        if m.pass_mip_sols && (obj_conic < m.best_obj)
             # Save new incumbent info and indicate new solution for heuristic callback
-            m.best_obj = new_obj
+            m.best_obj = obj_conic
             m.best_int = soln_int
             m.best_cont = soln_cont
             m.best_slck = m.b_sub_int - m.A_sub_cont * m.best_cont
             m.isnew_feas = true
         end
+    else
+        obj_conic = Inf
     end
 
     # Free the conic model if not saving it
@@ -1357,7 +1379,7 @@ function solve_conicsub!(m::PajaritoConicModel, soln_int::Vector{Float64}, logs:
         MathProgBase.freemodel!(m.model_conic)
     end
 
-    return (status_conic, dual_conic)
+    return (status_conic, dual_conic, obj_conic)
 end
 
 # Construct and warm-start MIP solution using best solution
