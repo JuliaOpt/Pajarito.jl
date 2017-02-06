@@ -1329,7 +1329,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
         m.best_cont = getvalue(m.x_cont)
 
         if !in(m.best_cont, sol_incum)
-            error("solution did not go thru incumbent cb\n")
+            warn("solution did not go thru incumbent cb\n")
         end
 
         for vars in m.vars_soc
