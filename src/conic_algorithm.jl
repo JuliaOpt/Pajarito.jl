@@ -470,6 +470,10 @@ function MathProgBase.optimize!(m::PajaritoConicModel)
             m.final_soln = zeros(m.num_var_orig)
             m.final_soln[keep_cols] = soln_new
 
+            @show size(m.b_orig)
+            @show size(m.A_orig)
+            @show size(m.final_soln)
+            
             # Check feas in original space of cones
             # con cones
             viol_lin = 0.0
