@@ -374,6 +374,8 @@ function MathProgBase.optimize!(m::PajaritoConicModel)
             # Add initial dual cuts to MIP model
             dual_conic = MathProgBase.getdual(model_relax)
             for n in 1:m.num_soc
+                vars = m.vars_soc[n]
+                vars_dagg = m.vars_dagg_soc[n]
                 dual = dual_conic[rows_relax_soc[n]]
                 dim = length(dual)
 
@@ -1080,6 +1082,8 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
                 cuts = Vector{JuMP.AffExpr}(m.num_soc)
 
                 for n in 1:m.num_soc
+                    vars = m.vars_soc[n]
+                    vars_dagg = m.vars_dagg_soc[n]
                     dual = dual_conic[m.rows_sub_soc[n]]
                     dim = length(dual)
 
