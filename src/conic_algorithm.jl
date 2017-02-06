@@ -1084,7 +1084,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
             if m.scale_dual_cuts && (status_conic == :Infeasible)
                 # Find rescaling factor for ray
                 ray_value = vecdot(dual_conic, m.b_sub_int)  # sum(vecdot([m.rows_sub_soc[n]], m.b_sub_int[m.rows_sub_soc[n]]) for n in 1:num_soc)
-                if conic_ray_value > -m.tol_zero
+                if ray_value > -m.tol_zero
                     error("Conic solver failure: b'y not sufficiently negative for infeasible ray y\n")
                 end
             end
