@@ -1167,10 +1167,10 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
         # Add primal cuts on infeasible cones
         if m.prim_max_viol_only
             # Most violated cone only
-            cut_cones = [maxviolcone]
+            cut_cones = maxviolcone:maxviolcone
         else
             # All infeasible cones
-            cut_cones = shuffle(1:m.num_soc)
+            cut_cones = 1:m.num_soc
         end
 
         for n in cut_cones
