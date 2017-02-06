@@ -1272,22 +1272,22 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
     end
     addlazycallback(m.model_mip, callback_lazy)
 
-    if m.pass_mip_sols
-        # Add heuristic callback to give MIP solver feasible solutions from conic solves
-        function callback_heur(cb)
-            # If have a new best feasible solution since last heuristic solution added
-            println("doing heuristic cb")
-            if m.isnew_feas
-                println("adding new sol")
-                # Set MIP solution to the new best feasible solution
-                set_best_soln!(m, cb, logs)
-                addsolution(cb)
-                m.isnew_feas = false
-                m.best_obj = Inf
-            end
-        end
-        addheuristiccallback(m.model_mip, callback_heur)
-    end
+    # if m.pass_mip_sols
+    #     # Add heuristic callback to give MIP solver feasible solutions from conic solves
+    #     function callback_heur(cb)
+    #         # If have a new best feasible solution since last heuristic solution added
+    #         println("doing heuristic cb")
+    #         if m.isnew_feas
+    #             println("adding new sol")
+    #             # Set MIP solution to the new best feasible solution
+    #             set_best_soln!(m, cb, logs)
+    #             addsolution(cb)
+    #             m.isnew_feas = false
+    #             m.best_obj = Inf
+    #         end
+    #     end
+    #     addheuristiccallback(m.model_mip, callback_heur)
+    # end
 
     sol_incum = Set{Vector{Float64}}()
 
