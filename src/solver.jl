@@ -39,6 +39,7 @@ immutable PajaritoSolver <: MathProgBase.AbstractMathProgSolver
     viol_cuts_only::Bool        # (Conic only) Only add cuts that are violated by the current MIP solution (may be useful for MSD algorithm where many cuts are added)
     proj_dual_infeas::Bool      # (Conic only) Project dual cone infeasible dual vectors onto dual cone boundaries
     proj_dual_feas::Bool        # (Conic only) Project dual cone strictly feasible dual vectors onto dual cone boundaries
+    scale_dual_cuts::Bool       # (Conic only) Rescale a dual vector so largest abs value is 1
     prim_cuts_only::Bool        # (Conic only) Do not add dual cuts
     prim_cuts_always::Bool      # (Conic only) Add primal cuts at each iteration or in each lazy callback
     prim_cuts_assist::Bool      # (Conic only) Add primal cuts only when integer solutions are repeating
@@ -85,6 +86,7 @@ function PajaritoSolver(;
     viol_cuts_only = true,
     proj_dual_infeas = true,
     proj_dual_feas = false,
+    scale_dual_cuts = false,
     prim_cuts_only = false,
     prim_cuts_always = false,
     prim_cuts_assist = true,
@@ -99,14 +101,14 @@ function PajaritoSolver(;
     tol_sdp_eigval = 1e-4
     )
 
-    PajaritoSolver(log_level, timeout, rel_gap, mip_solver_drives, mip_solver, mip_subopt_solver, mip_subopt_count, round_mip_sols, pass_mip_sols, cont_solver, solve_relax, dualize_relax, dualize_sub, soc_disagg, soc_in_mip, sdp_eig, sdp_soc, init_soc_one, init_soc_inf, init_exp, init_sdp_lin, init_sdp_soc, viol_cuts_only, proj_dual_infeas, proj_dual_feas, prim_cuts_only, prim_cuts_always, prim_cuts_assist, prim_viol_cuts_only, prim_max_viol_only, prim_soc_disagg, prim_sdp_eig, tol_zero, tol_prim_infeas, tol_sdp_eigvec, tol_sdp_eigval)
+    PajaritoSolver(log_level, timeout, rel_gap, mip_solver_drives, mip_solver, mip_subopt_solver, mip_subopt_count, round_mip_sols, pass_mip_sols, cont_solver, solve_relax, dualize_relax, dualize_sub, soc_disagg, soc_in_mip, sdp_eig, sdp_soc, init_soc_one, init_soc_inf, init_exp, init_sdp_lin, init_sdp_soc, viol_cuts_only, proj_dual_infeas, proj_dual_feas, scale_dual_cuts, prim_cuts_only, prim_cuts_always, prim_cuts_assist, prim_viol_cuts_only, prim_max_viol_only, prim_soc_disagg, prim_sdp_eig, tol_zero, tol_prim_infeas, tol_sdp_eigvec, tol_sdp_eigval)
 end
 
 
 # Create Pajarito conic model: can solve with either conic algorithm or nonlinear algorithm wrapped with ConicNonlinearBridge
 function MathProgBase.ConicModel(s::PajaritoSolver)
     if applicable(MathProgBase.ConicModel, s.cont_solver)
-        return PajaritoConicModel(s.log_level, s.timeout, s.rel_gap, s.mip_solver_drives, s.mip_solver, s.mip_subopt_solver, s.mip_subopt_count, s.round_mip_sols, s.pass_mip_sols, s.cont_solver, s.solve_relax, s.dualize_relax, s.dualize_sub, s.soc_disagg, s.soc_in_mip, s.sdp_eig, s.sdp_soc, s.init_soc_one, s.init_soc_inf, s.init_exp, s.init_sdp_lin, s.init_sdp_soc, s.viol_cuts_only, s.proj_dual_infeas, s.proj_dual_feas, s.prim_cuts_only, s.prim_cuts_always, s.prim_cuts_assist, s.prim_viol_cuts_only, s.prim_max_viol_only, s.prim_soc_disagg, s.prim_sdp_eig, s.tol_zero, s.tol_prim_infeas, s.tol_sdp_eigvec, s.tol_sdp_eigval)
+        return PajaritoConicModel(s.log_level, s.timeout, s.rel_gap, s.mip_solver_drives, s.mip_solver, s.mip_subopt_solver, s.mip_subopt_count, s.round_mip_sols, s.pass_mip_sols, s.cont_solver, s.solve_relax, s.dualize_relax, s.dualize_sub, s.soc_disagg, s.soc_in_mip, s.sdp_eig, s.sdp_soc, s.init_soc_one, s.init_soc_inf, s.init_exp, s.init_sdp_lin, s.init_sdp_soc, s.viol_cuts_only, s.proj_dual_infeas, s.proj_dual_feas, s.scale_dual_cuts, s.prim_cuts_only, s.prim_cuts_always, s.prim_cuts_assist, s.prim_viol_cuts_only, s.prim_max_viol_only, s.prim_soc_disagg, s.prim_sdp_eig, s.tol_zero, s.tol_prim_infeas, s.tol_sdp_eigvec, s.tol_sdp_eigval)
     # elseif applicable(MathProgBase.NonlinearModel, s.cont_solver)
     #     return MathProgBase.ConicModel(ConicNonlinearBridge.ConicNLPWrapper(nlp_solver=s))
     else

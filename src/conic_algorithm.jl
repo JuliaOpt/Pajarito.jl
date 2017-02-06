@@ -57,6 +57,7 @@ type PajaritoConicModel <: MathProgBase.AbstractConicModel
     viol_cuts_only::Bool        # (Conic only) Only add cuts that are violated by the current MIP solution (may be useful for MSD algorithm where many cuts are added)
     proj_dual_infeas::Bool      # (Conic only) Project dual cone infeasible dual vectors onto dual cone boundaries
     proj_dual_feas::Bool        # (Conic only) Project dual cone strictly feasible dual vectors onto dual cone boundaries
+    scale_dual_cuts::Bool       # (Conic only) Rescale a dual vector so largest abs value is 1
     prim_cuts_only::Bool        # (Conic only) Do not add dual cuts
     prim_cuts_always::Bool      # (Conic only) Add primal cuts at each iteration or in each lazy callback
     prim_cuts_assist::Bool      # (Conic only) Add primal cuts only when integer solutions are repeating
@@ -123,7 +124,7 @@ type PajaritoConicModel <: MathProgBase.AbstractConicModel
     status::Symbol
 
     # Model constructor
-    function PajaritoConicModel(log_level, timeout, rel_gap, mip_solver_drives, mip_solver, mip_subopt_solver, mip_subopt_count, round_mip_sols, pass_mip_sols, cont_solver, solve_relax, dualize_relax, dualize_sub, soc_disagg, soc_in_mip, sdp_eig, sdp_soc, init_soc_one, init_soc_inf, init_exp, init_sdp_lin, init_sdp_soc, viol_cuts_only, proj_dual_infeas, proj_dual_feas, prim_cuts_only, prim_cuts_always, prim_cuts_assist, prim_viol_cuts_only, prim_max_viol_only, prim_soc_disagg, prim_sdp_eig, tol_zero, tol_prim_infeas, tol_sdp_eigvec, tol_sdp_eigval)
+    function PajaritoConicModel(log_level, timeout, rel_gap, mip_solver_drives, mip_solver, mip_subopt_solver, mip_subopt_count, round_mip_sols, pass_mip_sols, cont_solver, solve_relax, dualize_relax, dualize_sub, soc_disagg, soc_in_mip, sdp_eig, sdp_soc, init_soc_one, init_soc_inf, init_exp, init_sdp_lin, init_sdp_soc, viol_cuts_only, proj_dual_infeas, proj_dual_feas, scale_dual_cuts, prim_cuts_only, prim_cuts_always, prim_cuts_assist, prim_viol_cuts_only, prim_max_viol_only, prim_soc_disagg, prim_sdp_eig, tol_zero, tol_prim_infeas, tol_sdp_eigvec, tol_sdp_eigval)
         # Errors
         if !mip_solver_drives
             error("This branch of Pajarito is only for the MSD algorithm\n")
@@ -171,6 +172,7 @@ type PajaritoConicModel <: MathProgBase.AbstractConicModel
         m.proj_dual_infeas = proj_dual_infeas
         m.proj_dual_feas = proj_dual_feas
         m.viol_cuts_only = viol_cuts_only
+        m.scale_dual_cuts = scale_dual_cuts
         m.mip_solver = mip_solver
         m.cont_solver = cont_solver
         m.timeout = timeout
@@ -400,7 +402,7 @@ function MathProgBase.optimize!(m::PajaritoConicModel)
                     if dual[j] == 0.
                         # Zero cut
                         continue
-                    elseif (dim - 1) * (dual[j]^2 / (2. * dual[1]) < m.tol_zero
+                    elseif (dim - 1) * dual[j]^2 / (2. * dual[1]) < m.tol_zero
                         # Coefficient is too small
                         add_full = true
                         continue
