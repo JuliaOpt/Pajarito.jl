@@ -1045,7 +1045,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
 
     # Add lazy cuts callback to add dual and primal conic cuts
     function callback_lazy(cb)
-        # println("doing lazy cb")
+        println("doing lazy cb")
         # If any SOC variables are SOC infeasible, must continue
         fill!(viol_cones, false)
         maxviol = 0.
@@ -1062,6 +1062,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
             end
         end
         if maxviolcone == 0
+            println("feasible solution in lazy")
             return
         end
 
@@ -1075,6 +1076,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
         # Add new dual cuts if new solution, else add existing dual cuts
         if !haskey(cache_cuts, soln_int)
             # New integer solution
+            println("new int solution in lazy")
             cuts = Vector{JuMP.AffExpr}()
             cache_cuts[copy(soln_int)] = cuts
 
@@ -1164,6 +1166,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
             end
         else
             # Repeat integer solution: get dual cuts if they exist
+            println("repeat int solution in lazy")
             logs[:n_repeat] += 1
             cuts = cache_cuts[soln_int]
             if !isempty(cuts)
@@ -1184,6 +1187,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
 
         # Finish lazy callback if added a violated dual cut already
         if viol_cut
+            println("violating dual cuts added in lazy")
             return
         end
 
@@ -1261,6 +1265,8 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
 
         if !viol_cut
             warn("No dual cuts or primal cuts were added on an infeasible solution\n")
+        else
+            println("viol cuts added on infeas solution in lazy")
         end
     end
     addlazycallback(m.model_mip, callback_lazy)
