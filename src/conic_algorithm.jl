@@ -1288,18 +1288,18 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
     function callback_incumbent(cb)
         push!(sol_incum, getvalue(m.x_cont))
 
-        # println("doing incumbent cb")
+        println("doing incumbent cb")
         # If any SOC variables are SOC infeasible, return false
         for vars in m.vars_soc
             if (vecnorm(getvalue(vars[j]) for j in 2:length(vars)) - getvalue(vars[1])) > m.tol_prim_infeas
-                # println("checked feas: rejecting")
+                println("checked feas: rejecting")
                 CPLEX.rejectincumbent(cb)
                 return
             end
         end
 
         # No conic infeasibility: allow solution as new incumbent
-        # println("checked feas: accepting")
+        println("checked feas: accepting")
         CPLEX.acceptincumbent(cb)
     end
     CPLEX.addincumbentcallback(m.model_mip, callback_incumbent)
