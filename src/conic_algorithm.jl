@@ -1242,6 +1242,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
                     @expression(m.model_mip, cut_expr, (dim - 1) * ((prim[j] / xnorm)^2 / 2. * vars[1] + vars_dagg[j-1] - prim[j] / xnorm * vars[j]))
                     if !m.prim_viol_cuts_only || (-getvalue(cut_expr) > m.tol_prim_infeas)
                         @lazyconstraint(cb, cut_expr >= 0.)
+                        viol_cut = true
                     end
                 end
             end
@@ -1253,8 +1254,13 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
                 @expression(m.model_mip, cut_expr, vars[1] - sum(prim[j] / xnorm * vars[j] for j in 2:dim))
                 if !m.prim_viol_cuts_only || (-getvalue(cut_expr) > m.tol_prim_infeas)
                     @lazyconstraint(cb, cut_expr >= 0.)
+                    viol_cut = true
                 end
             end
+        end
+
+        if !viol_cut
+            warn("No dual cuts or primal cuts were added on an infeasible solution\n")
         end
     end
     addlazycallback(m.model_mip, callback_lazy)
