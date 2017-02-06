@@ -1083,7 +1083,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
             # Solve conic subproblem and save dual in dict (empty if conic failure)
             (status_conic, dual_conic, obj_conic) = solve_conicsub!(m, soln_int, logs)
             println("conic status $status_conic")
-            
+
             if m.scale_dual_cuts && (status_conic == :Infeasible)
                 # Find rescaling factor for ray
                 ray_value = vecdot(dual_conic, m.b_sub_int)  # sum(vecdot([m.rows_sub_soc[n]], m.b_sub_int[m.rows_sub_soc[n]]) for n in 1:num_soc)
@@ -1299,7 +1299,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
         # If any SOC variables are SOC infeasible, return false
         for vars in m.vars_soc
             prim_inf = vecnorm(getvalue(vars[j]) for j in 2:length(vars)) - getvalue(vars[1])
-            @show prim_inf
+            # @show prim_inf
             if prim_inf > m.tol_prim_infeas
                 println("checked feas: rejecting")
                 CPLEX.rejectincumbent(cb)
