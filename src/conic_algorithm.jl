@@ -475,7 +475,7 @@ function MathProgBase.optimize!(m::PajaritoConicModel)
             viol_lin = 0.0
             viol_soc = 0.0
             viol_rot = 0.0
-            vals = m.final_soln
+            vals = m.b_orig - m.A_orig * m.final_soln
 
             for (cone, idx) in m.cone_con_orig
                 if cone == :Zero
@@ -502,7 +502,7 @@ function MathProgBase.optimize!(m::PajaritoConicModel)
             viol_lin = 0.0
             viol_soc = 0.0
             viol_rot = 0.0
-            vals = m.b_orig - m.A_orig * m.final_soln
+            vals = m.final_soln
 
             for (cone, idx) in m.cone_var_orig
                 if cone == :Zero
