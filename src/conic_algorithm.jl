@@ -1109,7 +1109,7 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
                         if dual[j] == 0.
                             # Zero cut
                             continue
-                        elseif (dim - 1) * (dual[j]^2 / (2. * dual[1]) < m.tol_zero
+                        elseif (dim - 1) * dual[j]^2 / (2. * dual[1]) < m.tol_zero
                             # Coefficient is too small
                             add_full = true
                             continue
