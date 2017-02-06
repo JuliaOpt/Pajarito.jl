@@ -1282,8 +1282,12 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
         addheuristiccallback(m.model_mip, callback_heur)
     end
 
+    sol_incum = Set{Vector{Float64}}()
+
     # Add incumbent callback to tell MIP solver whether solutions are conic feasible incumbents or not
     function callback_incumbent(cb)
+        push!(sol_incum, getvalue(m.x_cont))
+
         # println("doing incumbent cb")
         # If any SOC variables are SOC infeasible, return false
         for vars in m.vars_soc
@@ -1314,6 +1318,10 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
     elseif (status_mip == :UserLimit) || (status_mip == :Optimal) || (status_mip == :Suboptimal)
         m.best_int = getvalue(m.x_int)
         m.best_cont = getvalue(m.x_cont)
+
+        if !in(m.best_cont, sol_incum)
+            error("solution did not go thru incumbent cb\n")
+        end
 
         m.best_obj = getobjectivevalue(m.model_mip)
         m.mip_obj = getobjbound(m.model_mip)
