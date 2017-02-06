@@ -1332,6 +1332,14 @@ function solve_mip_driven!(m::PajaritoConicModel, logs::Dict{Symbol,Real})
             error("solution did not go thru incumbent cb\n")
         end
 
+        for vars in m.vars_soc
+            prim_inf = vecnorm(getvalue(vars[j]) for j in 2:length(vars)) - getvalue(vars[1])
+            @show prim_inf
+            if prim_inf > m.tol_prim_infeas
+                println("cone infeasible")
+            end
+        end
+
         m.best_obj = getobjectivevalue(m.model_mip)
         m.mip_obj = getobjbound(m.model_mip)
         m.gap_rel_opt = getobjgap(m.model_mip) #(m.best_obj - m.mip_obj) / (abs(m.best_obj) + 1e-5)
