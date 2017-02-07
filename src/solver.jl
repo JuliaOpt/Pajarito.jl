@@ -92,8 +92,8 @@ function PajaritoSolver(;
     prim_cuts_assist = true,
     prim_viol_cuts_only = true,
     prim_max_viol_only = false,
-    prim_soc_disagg = true,
-    prim_sdp_eig = true,
+    prim_soc_disagg = false,
+    prim_sdp_eig = false,
 
     tol_zero = 1e-10,
     tol_prim_infeas = 1e-6,

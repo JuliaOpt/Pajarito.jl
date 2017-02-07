@@ -470,10 +470,7 @@ function MathProgBase.optimize!(m::PajaritoConicModel)
             m.final_soln = zeros(m.num_var_orig)
             m.final_soln[keep_cols] = soln_new
 
-            @show size(m.b_orig)
-            @show size(m.A_orig)
-            @show size(m.final_soln)
-
+            println("\nSolution infeasibilities by cone:")
             # Check feas in original space of cones
             # con cones
             viol_lin = 0.0
@@ -499,7 +496,7 @@ function MathProgBase.optimize!(m::PajaritoConicModel)
                 end
             end
 
-            println("Constraint cones violations:")
+            println("Constraint cones max absolute violations")
             @show viol_lin
             @show viol_soc
             @show viol_rot
@@ -528,10 +525,11 @@ function MathProgBase.optimize!(m::PajaritoConicModel)
                 end
             end
 
-            println("Variable cones violations:")
+            println("Variable cones max absolute violations")
             @show viol_lin
             @show viol_soc
             @show viol_rot
+            println()
         end
     end
 
