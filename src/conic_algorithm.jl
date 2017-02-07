@@ -471,67 +471,6 @@ function MathProgBase.optimize!(m::PajaritoConicModel)
             soln_new[cols_cont] = m.best_cont
             m.final_soln = zeros(m.num_var_orig)
             m.final_soln[keep_cols] = soln_new
-
-            println("\nSolution infeasibilities by cone:")
-            # Check feas in original space of cones
-            # con cones
-            viol_lin = 0.0
-            viol_soc = 0.0
-            viol_rot = 0.0
-            vals = m.b_orig - m.A_orig * m.final_soln
-
-            for (cone, idx) in m.cone_con_orig
-                if cone == :Free
-                    nothing
-                elseif cone == :Zero
-                    viol_lin = max(viol_lin, maxabs(vals[idx]))
-                elseif cone == :NonNeg
-                    viol_lin = max(viol_lin, -minimum(vals[idx]))
-                elseif cone == :NonPos
-                    viol_lin = max(viol_lin, maximum(vals[idx]))
-                elseif cone == :SOC
-                    viol_soc = max(viol_soc, vecnorm(vals[idx[j]] for j in 2:length(idx)) - vals[idx[1]])
-                elseif cone == :SOCRotated
-                    viol_rot = max(viol_rot, vecnorm(vals[idx[j]] for j in 3:length(idx)) - sqrt(2 * vals[idx[1]] * vals[idx[2]]))
-                else
-                    error("Cone not supported: $cone\n")
-                end
-            end
-
-            println("Constraint cones max absolute violations")
-            @show viol_lin
-            @show viol_soc
-            @show viol_rot
-
-            # var cones
-            viol_lin = 0.0
-            viol_soc = 0.0
-            viol_rot = 0.0
-            vals = m.final_soln
-
-            for (cone, idx) in m.cone_var_orig
-                if cone == :Free
-                    nothing
-                elseif cone == :Zero
-                    viol_lin = max(viol_lin, maxabs(vals[idx]))
-                elseif cone == :NonNeg
-                    viol_lin = max(viol_lin, -minimum(vals[idx]))
-                elseif cone == :NonPos
-                    viol_lin = max(viol_lin, maximum(vals[idx]))
-                elseif cone == :SOC
-                    viol_soc = max(viol_soc, vecnorm(vals[idx[j]] for j in 2:length(idx)) - vals[idx[1]])
-                elseif cone == :SOCRotated
-                    viol_rot = max(viol_rot, vecnorm(vals[idx[j]] for j in 3:length(idx)) - sqrt(2 * vals[idx[1]] * vals[idx[2]]))
-                else
-                    error("Cone not supported: $cone\n")
-                end
-            end
-
-            println("Variable cones max absolute violations")
-            @show viol_lin
-            @show viol_soc
-            @show viol_rot
-            println()
         end
     end
 
@@ -1611,6 +1550,7 @@ function print_finish(m::PajaritoConicModel, logs::Dict{Symbol,Real})
     end
 
     @printf "\nPajarito MICP solve summary:\n"
+
     @printf " - Total time (s)       = %14.2e\n" logs[:total]
     @printf " - Status               = %14s\n" m.status
     @printf " - Best feasible obj.   = %+14.6e\n" m.best_obj
@@ -1669,6 +1609,64 @@ function print_finish(m::PajaritoConicModel, logs::Dict{Symbol,Real})
     @printf " -- Disagg. viol        = %5d\n" logs[:n_primdisv]
     @printf " -- Disagg. nonviol     = %5d\n" logs[:n_primdisnv]
     @printf " -- Poorly conditioned  = %5d\n" logs[:n_primdiscon]
+
+    @printf "\nMax absolute primal infeasibilities by cone:\n"
+
+    # con cones
+    viol_lin = 0.0
+    viol_soc = 0.0
+    viol_rot = 0.0
+    vals = m.b_orig - m.A_orig * m.final_soln
+
+    for (cone, idx) in m.cone_con_orig
+        if cone == :Free
+            nothing
+        elseif cone == :Zero
+            viol_lin = max(viol_lin, maxabs(vals[idx]))
+        elseif cone == :NonNeg
+            viol_lin = max(viol_lin, -minimum(vals[idx]))
+        elseif cone == :NonPos
+            viol_lin = max(viol_lin, maximum(vals[idx]))
+        elseif cone == :SOC
+            viol_soc = max(viol_soc, vecnorm(vals[idx[j]] for j in 2:length(idx)) - vals[idx[1]])
+        elseif cone == :SOCRotated
+            viol_rot = max(viol_rot, vecnorm(vals[idx[j]] for j in 3:length(idx)) - sqrt(2 * vals[idx[1]] * vals[idx[2]]))
+        else
+            error("Cone not supported: $cone\n")
+        end
+    end
+
+    @printf " - Constraint linear    = %10.2e\n" viol_lin
+    @printf " - Constraint SOC       = %10.2e\n" viol_soc
+    @printf " - Constraint RSOC      = %10.2e\n" viol_soc
+
+    # var cones
+    viol_lin = 0.0
+    viol_soc = 0.0
+    viol_rot = 0.0
+    vals = m.final_soln
+
+    for (cone, idx) in m.cone_var_orig
+        if cone == :Free
+            nothing
+        elseif cone == :Zero
+            viol_lin = max(viol_lin, maxabs(vals[idx]))
+        elseif cone == :NonNeg
+            viol_lin = max(viol_lin, -minimum(vals[idx]))
+        elseif cone == :NonPos
+            viol_lin = max(viol_lin, maximum(vals[idx]))
+        elseif cone == :SOC
+            viol_soc = max(viol_soc, vecnorm(vals[idx[j]] for j in 2:length(idx)) - vals[idx[1]])
+        elseif cone == :SOCRotated
+            viol_rot = max(viol_rot, vecnorm(vals[idx[j]] for j in 3:length(idx)) - sqrt(2 * vals[idx[1]] * vals[idx[2]]))
+        else
+            error("Cone not supported: $cone\n")
+        end
+    end
+
+    @printf " - Variable linear      = %10.2e\n" viol_lin
+    @printf " - Variable SOC         = %10.2e\n" viol_soc
+    @printf " - Variable RSOC        = %10.2e\n" viol_soc
 
     @printf "\n"
     flush(STDOUT)
