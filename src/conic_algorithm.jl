@@ -1610,6 +1610,12 @@ function print_finish(m::PajaritoConicModel, logs::Dict{Symbol,Real})
     @printf " -- Disagg. nonviol     = %5d\n" logs[:n_primdisnv]
     @printf " -- Poorly conditioned  = %5d\n" logs[:n_primdiscon]
 
+    if !isfinite(m.best_obj) || any(isnan(m.final_soln))
+        @printf "\n"
+        flush(STDOUT)
+        return
+    end
+
     @printf "\nMax absolute primal infeasibilities by cone:\n"
 
     # con cones
@@ -1630,7 +1636,8 @@ function print_finish(m::PajaritoConicModel, logs::Dict{Symbol,Real})
         elseif cone == :SOC
             viol_soc = max(viol_soc, vecnorm(vals[idx[j]] for j in 2:length(idx)) - vals[idx[1]])
         elseif cone == :SOCRotated
-            viol_rot = max(viol_rot, vecnorm(vals[idx[j]] for j in 3:length(idx)) - sqrt(2 * vals[idx[1]] * vals[idx[2]]))
+            # (y,z,x) in RSOC <=> (y+z,-y+z,sqrt2*x) in SOC, y >= 0, z >= 0
+            viol_rot = max(viol_rot, sqrt((vals[idx[1]] - vals[idx[2]])^2 + 2. * sumabs2(vals[idx[j]] for j in 3:length(idx))) - (vals[idx[1]] + vals[idx[2]]))
         else
             error("Cone not supported: $cone\n")
         end
@@ -1657,8 +1664,8 @@ function print_finish(m::PajaritoConicModel, logs::Dict{Symbol,Real})
             viol_lin = max(viol_lin, maximum(vals[idx]))
         elseif cone == :SOC
             viol_soc = max(viol_soc, vecnorm(vals[idx[j]] for j in 2:length(idx)) - vals[idx[1]])
-        elseif cone == :SOCRotated
-            viol_rot = max(viol_rot, vecnorm(vals[idx[j]] for j in 3:length(idx)) - sqrt(2 * vals[idx[1]] * vals[idx[2]]))
+            # (y,z,x) in RSOC <=> (y+z,-y+z,sqrt2*x) in SOC, y >= 0, z >= 0
+            viol_rot = max(viol_rot, sqrt((vals[idx[1]] - vals[idx[2]])^2 + 2. * sumabs2(vals[idx[j]] for j in 3:length(idx))) - (vals[idx[1]] + vals[idx[2]]))
         else
             error("Cone not supported: $cone\n")
         end
