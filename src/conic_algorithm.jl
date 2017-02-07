@@ -1632,7 +1632,6 @@ function print_finish(m::PajaritoConicModel, logs::Dict{Symbol,Real})
     @printf " -- Load/solve relax    = %14.2e\n" logs[:relax_solve]
 
     @printf " - MIP-driven algorithm = %14.2e\n" logs[:oa_alg]
-    @printf " -- In lazy callback    = %14.2e\n" logs[:lazy]
     @printf " -- Solve conic model   = %14.2e\n" logs[:conic_solve]
 
     @printf "\nCounters:\n"
