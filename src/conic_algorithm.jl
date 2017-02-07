@@ -1664,6 +1664,7 @@ function print_finish(m::PajaritoConicModel, logs::Dict{Symbol,Real})
             viol_lin = max(viol_lin, maximum(vals[idx]))
         elseif cone == :SOC
             viol_soc = max(viol_soc, vecnorm(vals[idx[j]] for j in 2:length(idx)) - vals[idx[1]])
+        elseif cone == :SOCRotated
             # (y,z,x) in RSOC <=> (y+z,-y+z,sqrt2*x) in SOC, y >= 0, z >= 0
             viol_rot = max(viol_rot, sqrt((vals[idx[1]] - vals[idx[2]])^2 + 2. * sumabs2(vals[idx[j]] for j in 3:length(idx))) - (vals[idx[1]] + vals[idx[2]]))
         else
