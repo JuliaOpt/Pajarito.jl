@@ -944,13 +944,7 @@ function create_mip_data!(m::PajaritoConicModel, c_new::Vector{Float64}, A_new::
         vars_dagg_soc[n_soc] = Vector{JuMP.Variable}(0)
 
         # Set bounds
-        # setlowerbound(vars[1], 0.)
         @constraint(model_mip, vars[1] >= 0)
-
-        # Set names
-        # for j in 1:len
-        #     setname(vars[j], "s$(j)_soc$(n_soc)")
-        # end
 
         # Add disaggregated SOC variables
         # 2*d_j >= y_j^2/x
@@ -973,8 +967,8 @@ function create_mip_data!(m::PajaritoConicModel, c_new::Vector{Float64}, A_new::
             # for all j, implies x*sqrt(len - 1) >= sum(|y_j|)
             # linearize y_j^2/x at x = 1, y_j = 1/sqrt(len - 1) for all j
             for j in 2:len
-              @constraint(model_mip, 2. * (len - 1) * vars_dagg[j-1] - 2. * sqrt(len - 1) * vars[j] + vars[1] >= 0)
-              @constraint(model_mip, 2. * (len - 1) * vars_dagg[j-1] + 2. * sqrt(len - 1) * vars[j] + vars[1] >= 0)
+                @constraint(model_mip, 2. * (len - 1) * vars_dagg[j-1] - 2. * sqrt(len - 1) * vars[j] + vars[1] >= 0)
+                @constraint(model_mip, 2. * (len - 1) * vars_dagg[j-1] + 2. * sqrt(len - 1) * vars[j] + vars[1] >= 0)
             end
         end
         if m.init_soc_inf
@@ -984,8 +978,8 @@ function create_mip_data!(m::PajaritoConicModel, c_new::Vector{Float64}, A_new::
             # linearize y_j^2/x at x = 1, y_j = 1 for each j (y_k = 0 for k != j)
             # equivalent to standard 3-dim rotated SOC linearizations x + d_j >= 2|y_j|
             for j in 2:len
-              @constraint(model_mip, (len - 1) * (2. * vars_dagg[j-1] - 2. * vars[j] + vars[1]) >= 0)
-              @constraint(model_mip, (len - 1) * (2. * vars_dagg[j-1] + 2. * vars[j] + vars[1]) >= 0)
+                @constraint(model_mip, (len - 1) * (2. * vars_dagg[j-1] - 2. * vars[j] + vars[1]) >= 0)
+                @constraint(model_mip, (len - 1) * (2. * vars_dagg[j-1] + 2. * vars[j] + vars[1]) >= 0)
             end
         end
     end
